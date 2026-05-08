@@ -13,7 +13,7 @@ import stripe
 
 app = Flask(__name__, template_folder=".", static_folder=".", static_url_path="")
 app.secret_key = "change-this-secret-key"
-stripe.api_key = ""
+stripe.api_key = "sk_test_51TUgM1PEeETDzLUbe22GNXLu1JKiK3B4vjjJMDCe0z1dQa8jAeB9TyO68wPw40oVv9e4fMOeLfePdTk2kkaLmaTf00cYd47gfn"
 STRIPE_WEBHOOK_SECRET = ""
 BASE_URL = "http://localhost:5000"
 socketio = SocketIO(app, cors_allowed_origins="*")
