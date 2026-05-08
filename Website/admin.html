@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Bloxy Admin Panel</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+
+<body class="home-body">
+
+<header class="roblox-topbar">
+  <div class="brand">
+    <img src="/logo.png" alt="Bloxy Logo">
+    <span>Bloxy</span>
+  </div>
+
+  <nav class="top-links">
+    <a href="/home">Games</a>
+    <a href="/catalog">Catalog</a>
+    <a href="/develop">Develop</a>
+    <a href="/blocks">Blocks</a>
+    <a href="/chat">Chat</a>
+    <a href="/support">Support</a>
+    <a href="/admin">Admin</a>
+    <a href="/settings">Settings</a>
+  </nav>
+
+  <input class="search-bar" placeholder="Search Bloxy">
+
+  <div class="user-nav">
+    <span>{{ username }}</span>
+    <span class="blocks-pill">{{ blocks }} Blocks</span>
+    <a href="/logout">Logout</a>
+  </div>
+</header>
+
+<main class="admin-layout">
+
+  <section class="admin-hero">
+    <h1>Bloxy Admin Panel</h1>
+    <p>Manage users, bans, reports, and support tickets.</p>
+
+    <div class="mini-badges">
+      <span>Admin: {{ username }}</span>
+      <span>{{ tickets|length }} Tickets</span>
+      <span>{{ banned_users|length }} Banned</span>
+    </div>
+  </section>
+
+  <section class="admin-grid">
+
+    <div class="admin-card">
+      <h2>Ban User</h2>
+
+      <input id="banUsername" placeholder="Username">
+      <textarea id="banReason" placeholder="Reason for ban..."></textarea>
+
+      <button onclick="banUser()">Ban User</button>
+
+      <p id="banStatus"></p>
+    </div>
+
+    <div class="admin-card">
+      <h2>Banned Users</h2>
+
+      {% if banned_users %}
+        {% for banned in banned_users %}
+          <div class="admin-row">
+            <div>
+              <b>{{ banned.username }}</b>
+              <p>{{ banned.reason }}</p>
+              <small>Banned by {{ banned.banned_by }} at {{ banned.created_at }}</small>
+            </div>
+
+            <button onclick="unbanUser('{{ banned.username }}')">Unban</button>
+          </div>
+        {% endfor %}
+      {% else %}
+        <p class="muted-text">No banned users.</p>
+      {% endif %}
+    </div>
+
+  </section>
+
+  <section class="admin-card full-width">
+    <h2>Users</h2>
+
+    <div class="admin-table">
+      <div class="admin-table-head">
+        <span>Username</span>
+        <span>Blocks</span>
+        <span>Friends</span>
+        <span>Status</span>
+        <span>Action</span>
+      </div>
+
+      {% for user in users %}
+        <div class="admin-table-row">
+          <span>
+            {{ user.username }}
+            {% if user.admin %}
+              <b class="admin-tag">ADMIN</b>
+            {% endif %}
+          </span>
+
+          <span>{{ user.blocks }}</span>
+          <span>{{ user.friends_count }}</span>
+
+          <span>
+            {% if user.banned %}
+              <b class="bad-tag">BANNED</b>
+            {% else %}
+              <b class="good-tag">OK</b>
+            {% endif %}
+          </span>
+
+          <span>
+            {% if not user.admin %}
+              {% if user.banned %}
+                <button onclick="unbanUser('{{ user.username }}')">Unban</button>
+              {% else %}
+                <button onclick="quickBan('{{ user.username }}')">Ban</button>
+              {% endif %}
+            {% else %}
+              Protected
+            {% endif %}
+          </span>
+        </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="admin-card full-width">
+    <h2>Support Tickets</h2>
+
+    {% if tickets %}
+      {% for ticket in tickets %}
+        <div class="ticket-card">
+          <div class="ticket-top">
+            <h3>{{ ticket.subject }}</h3>
+            <span class="ticket-status">{{ ticket.status }}</span>
+          </div>
+
+          <p><b>User:</b> {{ ticket.username }}</p>
+          <p><b>Category:</b> {{ ticket.category }}</p>
+          <p><b>Created:</b> {{ ticket.created_at }}</p>
+          <p>{{ ticket.message }}</p>
+
+          {% if ticket.admin_reply %}
+            <div class="admin-reply">
+              <b>Current Reply:</b>
+              <p>{{ ticket.admin_reply }}</p>
+            </div>
+          {% endif %}
+
+          <textarea id="reply-{{ ticket.id }}" placeholder="Write support reply..."></textarea>
+
+          <select id="status-{{ ticket.id }}">
+            <option value="answered">answered</option>
+            <option value="open">open</option>
+            <option value="closed">closed</option>
+          </select>
+
+          <button onclick="replyTicket('{{ ticket.id }}')">Send Reply</button>
+          <button class="danger-btn" onclick="deleteTicket('{{ ticket.id }}')">Delete Ticket</button>
+        </div>
+      {% endfor %}
+    {% else %}
+      <p class="muted-text">No tickets yet.</p>
+    {% endif %}
+  </section>
+
+</main>
+
+<script>
+function banUser() {
+  const username = document.getElementById("banUsername").value.trim();
+  const reason = document.getElementById("banReason").value.trim();
+  const status = document.getElementById("banStatus");
+
+  fetch("/api/admin/ban", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({
+      username,
+      reason
+    })
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (!d.success) {
+      status.textContent = d.error || "Ban failed.";
+      status.style.color = "#ff6666";
+      return;
+    }
+
+    status.textContent = "User banned.";
+    status.style.color = "#22c55e";
+    setTimeout(() => window.location.reload(), 700);
+  });
+}
+
+function quickBan(username) {
+  const reason = prompt("Ban reason for " + username + "?");
+
+  if (reason === null) return;
+
+  fetch("/api/admin/ban", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({
+      username,
+      reason: reason || "No reason provided"
+    })
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (!d.success) {
+      alert(d.error || "Ban failed.");
+      return;
+    }
+
+    window.location.reload();
+  });
+}
+
+function unbanUser(username) {
+  fetch("/api/admin/unban", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({ username })
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (!d.success) {
+      alert(d.error || "Unban failed.");
+      return;
+    }
+
+    window.location.reload();
+  });
+}
+
+function replyTicket(ticketId) {
+  const reply = document.getElementById("reply-" + ticketId).value.trim();
+  const status = document.getElementById("status-" + ticketId).value;
+
+  fetch("/api/admin/tickets/reply", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({
+      ticket_id: ticketId,
+      reply,
+      status
+    })
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (!d.success) {
+      alert(d.error || "Could not reply.");
+      return;
+    }
+
+    alert("Reply sent.");
+    window.location.reload();
+  });
+}
+
+</script>
+<script>
+function deleteTicket(ticketId) {
+  if (!confirm("Delete this support ticket forever?")) {
+    return;
+  }
+
+  fetch("/api/admin/tickets/delete", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({
+      ticket_id: ticketId
+    })
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (!d.success) {
+      alert(d.error || "Could not delete ticket.");
+      return;
+    }
+
+    alert("Ticket deleted.");
+    window.location.reload();
+  });
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,47 @@
+{
+  "name": "bloxy",
+  "version": "1.0.0",
+  "description": "Bloxy Desktop App",
+  "main": "main.js",
+  "author": "Bloxy",
+  "license": "UNLICENSED",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder",
+    "dist:linux": "electron-builder --linux",
+    "dist:win": "electron-builder --win",
+    "dist:mac": "electron-builder --mac"
+  },
+  "devDependencies": {
+    "electron": "latest",
+    "electron-builder": "latest"
+  },
+  "build": {
+    "appId": "com.bloxy.app",
+    "productName": "Bloxy",
+    "files": [
+      "main.js",
+      "logo.png",
+      "package.json"
+    ],
+    "extraMetadata": {
+      "main": "main.js"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Game",
+      "icon": "logo.png"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "logo.png"
+    },
+    "mac": {
+      "target": "dmg",
+      "icon": "logo.png"
+    }
+  }
+}

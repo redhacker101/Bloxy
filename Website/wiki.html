@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>Bloxy Wiki</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+
+<body class="home-body">
+
+<header class="roblox-topbar">
+  <div class="brand">
+    <img src="/logo.png" alt="Bloxy Logo" />
+    <span>Bloxy</span>
+  </div>
+
+  <nav class="top-links">
+    <a href="/home">Games</a>
+    <a href="/catalog">Catalog</a>
+    <a href="/develop">Develop</a>
+    <a href="/blocks">Blocks</a>
+    <a href="/chat">Chat</a>
+    <a href="/support">Support</a>
+    <a href="/settings">Settings</a>
+  </nav>
+
+  <input class="search-bar" placeholder="Search Bloxy" />
+
+  <div class="user-nav">
+    <span>{{ username }}</span>
+    <span class="blocks-pill">{{ blocks }} Blocks</span>
+    <a href="/logout">Logout</a>
+  </div>
+</header>
+
+<main class="wiki-page">
+
+  <section class="wiki-hero">
+    <div class="wiki-hero-left">
+      <div class="wiki-logo-box">
+        <img src="/logo.png" alt="Bloxy Logo" />
+      </div>
+
+      <div>
+        <h1>Bloxy Developer Wiki</h1>
+        <p>
+          Learn how Bloxy games work, how Godot games connect to the Bloxy Runtime,
+          and how developers can integrate avatars, multiplayer, plugins, and server packs.
+        </p>
+
+        <div class="wiki-hero-buttons">
+          <a href="/develop" class="primary-btn">Back to Develop</a>
+          <a href="#runtime" class="secondary-btn">Runtime Docs</a>
+        </div>
+      </div>
+    </div>
+
+    <div class="wiki-info-card">
+      <h3>Bloxy Alpha Docs</h3>
+      <p>
+        This wiki explains the systems developers need before uploading games to Bloxy.
+      </p>
+      <span class="status-pill">Developer Wiki</span>
+    </div>
+  </section>
+
+  <section class="wiki-section">
+    <h2>Wiki Overview</h2>
+
+    <div class="wiki-card-grid">
+
+      <a href="#getting-started" class="wiki-card">
+        <h3>Getting Started</h3>
+        <p>How developers create their first Bloxy game using Godot.</p>
+      </a>
+
+      <a href="#runtime" class="wiki-card">
+        <h3>Bloxy Runtime</h3>
+        <p>How the Bloxy app loads client.pck and connects games to Bloxy systems.</p>
+      </a>
+
+      <a href="#plugins" class="wiki-card">
+        <h3>Bloxy Plugins</h3>
+        <p>What Godot plugins or SDK files developers need to add.</p>
+      </a>
+
+      <a href="#avatars" class="wiki-card">
+        <h3>Avatar System</h3>
+        <p>How default avatars, custom avatars, and no-avatar games work.</p>
+      </a>
+
+      <a href="#multiplayer" class="wiki-card">
+        <h3>Multiplayer</h3>
+        <p>How joining, leaving, player identity, and server sessions work.</p>
+      </a>
+
+      <a href="#upload-format" class="wiki-card">
+        <h3>Upload Format</h3>
+        <p>How client.pck, server.pck, manifest.json, icons, and screenshots work.</p>
+      </a>
+
+    </div>
+  </section>
+
+  <section class="wiki-section" id="getting-started">
+    <h2>Getting Started</h2>
+
+    <div class="wiki-doc-box">
+      <p>
+        Bloxy games are built using Godot. Developers create the game world, scripts,
+        UI, assets, and gameplay inside Godot, then export the project into the format
+        required by Bloxy.
+      </p>
+
+      <p>
+        During Alpha, Bloxy only accepts multiplayer games that can run on Linux servers.
+        Each game must include a client pack for players and a server pack for Bloxy servers.
+      </p>
+    </div>
+  </section>
+
+  <section class="wiki-section" id="runtime">
+    <h2>Bloxy Runtime</h2>
+
+    <div class="wiki-doc-box">
+      <p>
+        Bloxy games do not run as completely random standalone files. They run through the
+        Bloxy Runtime. The runtime is the layer between the Bloxy app, the Godot game package,
+        and the Bloxy servers.
+      </p>
+
+      <div class="wiki-code-box">
+<pre>Bloxy App
+  ↓
+Bloxy Runtime
+  ↓
+client.pck
+  ↓
+Bloxy Game Server / APIs</pre>
+      </div>
+
+      <p>
+        The runtime handles platform systems such as player identity, launch tokens,
+        join/leave events, avatar loading, and communication with Bloxy servers.
+      </p>
+    </div>
+  </section>
+
+  <section class="wiki-section" id="plugins">
+    <h2>Bloxy Plugins</h2>
+
+    <div class="wiki-doc-box">
+      <p>
+        Developers will use Bloxy plugins or SDK files inside their Godot project.
+        These plugins allow the game to communicate with Bloxy systems without developers
+        having to build login, avatars, or platform networking from scratch.
+      </p>
+
+      <div class="wiki-list">
+        <div>
+          <h4>Bloxy SDK</h4>
+          <p>Gives the game access to player data, username, user ID, avatar mode, and server session.</p>
+        </div>
+
+        <div>
+          <h4>Avatar Loader</h4>
+          <p>Loads Bloxy avatars or lets the game choose custom character handling.</p>
+        </div>
+
+        <div>
+          <h4>Network Manager</h4>
+          <p>Handles join tokens, connection state, player joined, and player left events.</p>
+        </div>
+
+        <div>
+          <h4>Server Bridge</h4>
+          <p>Lets the game communicate safely with Bloxy backend systems.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="wiki-section" id="avatars">
+    <h2>Avatar System</h2>
+
+    <div class="wiki-doc-box">
+      <p>
+        Bloxy provides a default avatar system. Games can use the player’s normal Bloxy avatar,
+        use a custom avatar system, or use no avatar at all depending on the game type.
+      </p>
+
+      <div class="wiki-list">
+        <div>
+          <h4>Bloxy Avatar</h4>
+          <p>The game uses the player’s normal Bloxy avatar loaded by the runtime.</p>
+        </div>
+
+        <div>
+          <h4>Custom Avatar</h4>
+          <p>The game uses its own character system, like cars, soldiers, monsters, animals, or custom rigs.</p>
+        </div>
+
+        <div>
+          <h4>No Avatar</h4>
+          <p>The game does not spawn a player character. Useful for menus, strategy games, or UI-based games.</p>
+        </div>
+      </div>
+
+      <div class="wiki-code-box">
+<pre>Avatar Modes:
+- bloxy_avatar
+- custom_avatar
+- no_avatar</pre>
+      </div>
+    </div>
+  </section>
+
+  <section class="wiki-section" id="multiplayer">
+    <h2>Multiplayer / Join & Leave</h2>
+
+    <div class="wiki-doc-box">
+      <p>
+        Join and leave events are handled by the Bloxy Runtime and Bloxy server systems.
+        Games should not fake player identity or manually trust usernames from the client.
+      </p>
+
+      <div class="wiki-code-box">
+<pre>User clicks Play
+  ↓
+Bloxy creates launch token
+  ↓
+Runtime launches client.pck
+  ↓
+Game connects to server
+  ↓
+Server validates token
+  ↓
+Player joins game</pre>
+      </div>
+
+      <p>
+        The server validates the user, checks if they are banned, checks if the game is valid,
+        and then tells the game when a player joins or leaves.
+      </p>
+    </div>
+  </section>
+
+  <section class="wiki-section" id="upload-format">
+    <h2>Required Upload Format</h2>
+
+    <div class="wiki-doc-box">
+      <p>
+        Bloxy games must be uploaded in a zip file with the correct structure.
+      </p>
+
+      <div class="wiki-code-box">
+<pre>my_bloxy_game.zip
+├── client.pck
+├── server.pck
+├── manifest.json
+├── icon.png
+└── screenshots/
+    ├── 1.png
+    └── 2.png</pre>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+</body>
+</html>

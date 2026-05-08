@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bloxy Chat</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+
+<body class="home-body chat-body">
+
+<header class="roblox-topbar">
+  <div class="brand">
+    <img src="/logo.png" alt="Bloxy Logo">
+    <span>Bloxy</span>
+  </div>
+  <nav class="top-links">
+    <a href="/home">Games</a>
+    <a href="/catalog">Catalog</a>
+    <a href="/develop">Develop</a>
+    <a href="/blocks">Blocks</a>
+    <a href="/chat">Chat</a>
+    <a href="/support">Support</a>
+    <a href="/settings">Settings</a>
+
+  </nav>
+
+  <input class="search-bar" placeholder="Search Bloxy">
+
+  <div class="user-nav">
+    <span>{{ username }}</span>
+    <a href="/logout">Logout</a>
+  </div>
+</header>
+
+<main class="chat-only-page">
+  <section class="chat-container">
+
+    <aside class="chat-sidebar">
+      <h2>Chat</h2>
+      <p>Signed in as <b>{{ username }}</b></p>
+
+      <button class="room active" onclick="switchRoom('global', this)">🌍 Global</button>
+
+      <!-- FRIEND REQUESTS -->
+      <div class="dm-box">
+        <h3>Friend Requests</h3>
+
+        {% if incoming_requests %}
+          {% for req in incoming_requests %}
+            <div class="request-card">
+              <p><b>{{ req.from }}</b> wants to be friends.</p>
+              <button onclick="respondFriend('{{ req.from }}', 'accept')">Accept</button>
+              <button class="reject-btn" onclick="respondFriend('{{ req.from }}', 'reject')">Reject</button>
+            </div>
+          {% endfor %}
+        {% else %}
+          <p class="empty-friends">No incoming requests.</p>
+        {% endif %}
+      </div>
+
+      <!-- DMS -->
+      <div class="dm-box">
+        <h3>Direct Messages</h3>
+
+        {% if friends %}
+          {% for friend in friends %}
+            <div class="friend-row">
+              <button class="friend-chat-btn" onclick="openDM('{{ friend }}')">{{ friend }}</button>
+              <button class="remove-btn" onclick="removeFriend('{{ friend }}')">Remove</button>
+            </div>
+          {% endfor %}
+        {% else %}
+          <p class="empty-friends">Accept requests to unlock DMs.</p>
+        {% endif %}
+      </div>
+
+      <!-- CREATE PARTY -->
+      <div class="dm-box">
+        <h3>Create Party</h3>
+
+        <div id="partyFriendList">
+          {% for friend in friends %}
+            <label class="party-check">
+              <input type="checkbox" value="{{ friend }}">
+              {{ friend }}
+            </label>
+          {% endfor %}
+        </div>
+
+        <button onclick="createParty()">Create Party</button>
+      </div>
+
+      <!-- SAVED PARTIES -->
+      <div class="dm-box">
+        <h3>Saved Parties</h3>
+
+        {% if parties %}
+          {% for party in parties %}
+            <div class="party-card">
+
+              <!-- OPEN PARTY -->
+              <button class="friend-chat-btn"
+                onclick="openParty('{{ party.id }}', '{{ party.members|join(', ') }}')">
+                Party: {{ party.members|join(', ') }}
+              </button>
+
+              <!-- ADD FRIEND -->
+              <div class="party-add-row">
+
+                <div class="custom-dropdown" data-party="{{ party.id }}">
+                  <div class="dropdown-selected">Add friend...</div>
+
+                  <div class="dropdown-menu">
+                    {% for friend in friends %}
+                      {% if friend not in party.members %}
+                        <div class="dropdown-item"
+                             onclick="selectPartyFriend('{{ party.id }}', '{{ friend }}')">
+                          {{ friend }}
+                        </div>
+                      {% endif %}
+                    {% endfor %}
+                  </div>
+                </div>
+
+                <button onclick="addFriendToParty('{{ party.id }}')">Add</button>
+
+              </div>
+
+              {% if party.leader == username %}
+                <button class="remove-btn"
+                  onclick="deleteParty('{{ party.id }}')">
+                  Delete
+                </button>
+              {% endif %}
+
+            </div>
+          {% endfor %}
+        {% else %}
+          <p class="empty-friends">No saved parties yet.</p>
+        {% endif %}
+      </div>
+
+    </aside>
+
+    <!-- CHAT -->
+    <section class="chat-main">
+      <div class="chat-header">
+        <div>
+          <h1 id="roomName"># global</h1>
+          <p id="roomSubtext">Real-time Bloxy chat</p>
+        </div>
+        <span>● Online</span>
+      </div>
+
+      <div id="messages" class="messages"></div>
+
+      <div class="emoji-bar">
+        <button onclick="addEmoji(':fire:')">🔥</button>
+        <button onclick="addEmoji(':skull:')">💀</button>
+        <button onclick="addEmoji(':gg:')">GG</button>
+        <button onclick="addEmoji(':blox:')">🧊</button>
+      </div>
+
+      <div class="chat-input">
+        <input id="messageInput" placeholder="Message Bloxy..." autocomplete="off">
+        <button onclick="sendMessage()">Send</button>
+      </div>
+    </section>
+
+  </section>
+</main>
+
+<!-- GLOBAL WARNING -->
+<div id="globalWarning" class="global-warning-overlay">
+  <div class="global-warning-box">
+    <h2>Global Chat Warning</h2>
+    <p>Global chat may contain strong language.</p>
+    <p>Follow rules or get muted/banned.</p>
+
+    <div class="global-warning-buttons">
+      <button onclick="enterGlobalChat()">Enter</button>
+      <button class="cancel-global" onclick="cancelGlobalChat()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+
+  <script>
+  window.BLOXY_USERNAME = "{{ username }}";
+  window.BLOXY_MESSAGES_SETTING = "{{ privacy.messages }}";
+</script>
+
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+<script src="/chat.js"></script>
+
+</body>
+</html>
