@@ -13,6 +13,56 @@
 *.pfp
 # User-specific files (MonoDevelop/Xamarin Studio)
 *.userprefs
+# Gradle
+.gradle/
+build/
+**/build/
+
+# Android Studio / IntelliJ
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Local machine config
+local.properties
+
+# APK / AAB outputs
+*.apk
+*.aab
+*.ap_
+*.aar
+
+# Keystore / signing keys
+*.jks
+*.keystore
+*.p12
+*.pem
+*.key
+
+# Logs
+*.log
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Kotlin / Java generated
+*.class
+
+# Native build folders
+.externalNativeBuild/
+.cxx/
+
+# Captures
+captures/
+
+# Google services / secrets
+google-services.json
+secrets.properties
+
+# Misc
+.env
 
 # Mono auto generated files
 mono_crash.*
