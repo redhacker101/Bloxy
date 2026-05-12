@@ -46,19 +46,17 @@
       <div>
         <h1>Bloxy Developer Wiki</h1>
         <p>
-          Learn how Bloxy games work, how Godot games connect to the Bloxy Runtime,
-          and how developers can integrate avatars, multiplayer, plugins, and server packs.
+          Learn how to make Bloxy games.
         </p>
 
         <div class="wiki-hero-buttons">
           <a href="/develop" class="primary-btn">Back to Develop</a>
-          <a href="#runtime" class="secondary-btn">Runtime Docs</a>
         </div>
       </div>
     </div>
 
     <div class="wiki-info-card">
-      <h3>Bloxy Alpha Docs</h3>
+      <h3>Bloxy Docs</h3>
       <p>
         This wiki explains the systems developers need before uploading games to Bloxy.
       </p>
@@ -109,14 +107,9 @@
 
     <div class="wiki-doc-box">
       <p>
-        Bloxy games are built using Godot. Developers create the game world, scripts,
+        Bloxy games are built using Godot 4.6.2. Any other versions will be rejected. Developers create the game world, scripts,
         UI, assets, and gameplay inside Godot, then export the project into the format
         required by Bloxy.
-      </p>
-
-      <p>
-        During Alpha, Bloxy only accepts multiplayer games that can run on Linux servers.
-        Each game must include a client pack for players and a server pack for Bloxy servers.
       </p>
     </div>
   </section>
@@ -126,38 +119,26 @@
 
     <div class="wiki-doc-box">
       <p>
-        Bloxy games do not run as completely random standalone files. They run through the
-        Bloxy Runtime. The runtime is the layer between the Bloxy app, the Godot game package,
-        and the Bloxy servers.
-      </p>
+        Bloxy games do not run as completely random standalone files. They run through Godot Engine.
+      </p>       
 
       <div class="wiki-code-box">
-<pre>Bloxy App
+<pre>
+Bloxy App
   ↓
-Bloxy Runtime
+Bloxy Runtime(Godot Engine)
   ↓
 client.pck
   ↓
-Bloxy Game Server / APIs</pre>
+server.pck
+</pre>
       </div>
 
-      <p>
-        The runtime handles platform systems such as player identity, launch tokens,
-        join/leave events, avatar loading, and communication with Bloxy servers.
-      </p>
+      
     </div>
   </section>
 
   <section class="wiki-section" id="plugins">
-    <h2>Bloxy Plugins</h2>
-
-    <div class="wiki-doc-box">
-      <p>
-        Developers will use Bloxy plugins or SDK files inside their Godot project.
-        These plugins allow the game to communicate with Bloxy systems without developers
-        having to build login, avatars, or platform networking from scratch.
-      </p>
-
       <div class="wiki-list">
         <div>
           <h4>Bloxy SDK</h4>
@@ -166,12 +147,12 @@ Bloxy Game Server / APIs</pre>
 
         <div>
           <h4>Avatar Loader</h4>
-          <p>Loads Bloxy avatars or lets the game choose custom character handling.</p>
+          <p>Loads Bloxy avatars or lets the game choose custom character handling. This will be handled by the Bloxy SDK</p>
         </div>
 
         <div>
           <h4>Network Manager</h4>
-          <p>Handles join tokens, connection state, player joined, and player left events.</p>
+          <p>Handles join tokens, connection state, player joined, and player left events. This is apart of the Bloxy SDK</p>
         </div>
 
         <div>
@@ -194,7 +175,7 @@ Bloxy Game Server / APIs</pre>
       <div class="wiki-list">
         <div>
           <h4>Bloxy Avatar</h4>
-          <p>The game uses the player’s normal Bloxy avatar loaded by the runtime.</p>
+          <p>The game uses the player’s normal Bloxy avatar loaded by the app.</p>
         </div>
 
         <div>
@@ -256,14 +237,41 @@ Player joins game</pre>
       </p>
 
       <div class="wiki-code-box">
-<pre>my_bloxy_game.zip
-├── client.pck
-├── server.pck
+<pre> 
+Multiplayer:
+
+  my_bloxy_game.zip
 ├── manifest.json
-├── icon.png
-└── screenshots/
-    ├── 1.png
-    └── 2.png</pre>
+├── client/
+│   └── client.pck
+└── server/
+    └── server.pck
+
+{
+  "title": "Test Game",
+  "description": "A basic Bloxy test game",
+  "creator": "ali",
+  "godot_version": "4.6.2",
+  "max_players": 20,
+  "multiplayer": true
+}
+
+Singleplayer:
+
+manifest.json
+client/
+  client.pck
+
+{
+  "title": "Dark Hallway",
+  "description": "A singleplayer horror game made for Bloxy.",
+  "creator": "admin",
+  "godot_version": "4.6.2",
+  "max_players": 1,
+  "multiplayer": false
+}
+
+</pre>
       </div>
     </div>
   </section>

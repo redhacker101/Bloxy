@@ -36,75 +36,83 @@
 
 <main class="develop-page">
 
-  <section class="develop-hero">
-    <div>
+  <section class="develop-hero clean-dev-hero">
+    <div class="dev-hero-main">
+      <span class="dev-kicker">Bloxy Creator Hub</span>
+
       <h1>Start Developing on Bloxy</h1>
+
       <p>
-        Build multiplayer games for Bloxy using Godot. Upload your game package,
-        pass the Bloxy server test, and publish it for players.
+        Build multiplayer games with Godot, upload your Bloxy game package,
+        pass review, and publish it for players through the Bloxy launcher.
       </p>
 
-     <div class="hero-buttons">
-  <a href="/upload-game" class="primary-btn">Upload Game</a>
-  <a href="/wiki" class="secondary-btn">Bloxy Wiki</a>
-  <a href="#rules" class="secondary-btn">Read Rules</a>
-</div>
-<section class="dev-section">
-  <h2>Developer Wiki</h2>
-
-  <div class="rules-grid">
-    <div class="rule-card">
-      <h3>Bloxy Wiki</h3>
-      <p>
-        Read how Bloxy games connect to the runtime, avatars, plugins,
-        multiplayer, upload format, and server systems.
-      </p>
-      <a href="/wiki" class="godot-link">Open Bloxy Wiki →</a>
+      <div class="hero-buttons">
+        <a href="/upload-game" class="primary-btn">Upload Game</a>
+        <a href="/my-games" class="secondary-btn">My Games</a>
+        <a href="/wiki" class="secondary-btn">Bloxy Wiki</a>
+        <a href="#rules" class="secondary-btn">Read Rules</a>
+      </div>
     </div>
 
-    <div class="rule-card">
-      <h3>Runtime Integration</h3>
-      <p>
-        Learn what plugins and SDK files developers need to add so their
-        Godot games work with Bloxy avatars, join tokens, and servers.
-      </p>
-      <a href="/wiki" class="godot-link">Read Integration Docs →</a>
-    </div>
-
-    <div class="rule-card">
-      <h3>Avatar System</h3>
-      <p>
-        Learn how Bloxy avatars, custom characters, and no-avatar games
-        will work inside the Bloxy runtime.
-      </p>
-      <a href="/wiki" class="godot-link">Read Avatar Docs →</a>
-    </div>
-  </div>
-</section>
-    <div class="hero-card">
+    <div class="hero-card alpha-card">
       <h3>Alpha Requirement</h3>
-      <p>
-        Bloxy Alpha only accepts Linux-compatible multiplayer games.
-      </p>
-      <span class="status-pill">Multiplayer Required</span>
+      <p>Bloxy Alpha only accepts Linux-compatible multiplayer games as our servers run on linux.</p>
+
+      <div class="alpha-tags">
+        <span class="status-pill">Godot Required</span>
+      </div>
+
       <a href="https://godotengine.org/" target="_blank" class="godot-link">
-  Build with Godot Engine →
-</a>
+        Build with Godot Engine →
+      </a>
     </div>
   </section>
 
   <section class="dev-section">
-    <h2>Game Upload Requirements</h2>
+    <div class="section-title-row">
+      <div>
+        <h2>Developer Wiki</h2>
+        <p>Learn how Bloxy games connect to runtime systems, uploads, servers, and avatars.</p>
+      </div>
+    </div>
+
+    <div class="rules-grid">
+      <div class="rule-card">
+        <h3>Bloxy Wiki</h3>
+        <p>
+          Read how Bloxy games connect to the runtime, avatars, plugins,
+          multiplayer, upload format, and server systems.
+        </p>
+        <a href="/wiki" class="godot-link">Open Bloxy Wiki →</a>
+      </div>
+
+      <div class="rule-card">
+        <h3>Runtime Integration</h3>
+        <p>
+          Learn what plugins and SDK files developers need so their Godot games
+          work with Bloxy avatars, join tokens, and servers.
+        </p>
+      </div>
+
+      <div class="rule-card">
+        <a href="/wiki" class="godot-link">→</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="dev-section">
+    <div class="section-title-row">
+      <div>
+        <h2>Game Upload Requirements</h2>
+        <p>Every uploaded game must follow the Alpha rules before it can be approved.</p>
+      </div>
+    </div>
 
     <div class="rules-grid">
       <div class="rule-card">
         <h3>Linux Build Required</h3>
-        <p>Your game must run on Bloxy's Linux servers using Godot headless mode.</p>
-      </div>
-
-      <div class="rule-card">
-        <h3>Multiplayer Support</h3>
-        <p>Single-player-only games are not accepted during Alpha. Your game must support real multiplayer.</p>
+        <p>Your game must run on Bloxy's Linux servers using Godot headless mode if they are multiplayer.</p>
       </div>
 
       <div class="rule-card">
@@ -119,18 +127,23 @@
 
       <div class="rule-card">
         <h3>Bloxy Auth Required</h3>
-        <p>Your game must support Bloxy launch tokens so users cannot fake usernames or accounts.</p>
+        <p>Your game must support Bloxy launch tokens so users cannot fake usernames or accounts.This will be provided in the SDK.</p>
       </div>
 
       <div class="rule-card">
-        <h3>Must Be Light Weight</h3>
-        <p>If your game dosent run well on potatos it will be rejected.</p>
+        <h3>Must Be Lightweight</h3>
+        <p>If your game does not run well on low-end devices, it may be rejected.</p>
       </div>
     </div>
   </section>
 
   <section class="dev-section" id="rules">
-    <h2>Game Rules</h2>
+    <div class="section-title-row">
+      <div>
+        <h2>Game Rules</h2>
+        <p>These rules keep Bloxy safe for players and developers.</p>
+      </div>
+    </div>
 
     <div class="rules-list">
       <div class="rule-row">
@@ -179,19 +192,9 @@
       </div>
     </div>
   </section>
-
-  <section class="dev-section">
-    <h2>Required Upload Format</h2>
-
-    <div class="code-box">
-<pre>my_bloxy_game.zip
-├── client.pck
-├── server.pck
-├── manifest.json
-├── icon.png
-└── screenshots/
-    ├── 1.png
-    └── 2.png</pre>
+    <div class="format-actions">
+      <a href="/upload-game" class="primary-btn">Upload Game</a>
+      <a href="/my-games" class="secondary-btn">Manage My Games</a>
     </div>
   </section>
 
