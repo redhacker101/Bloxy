@@ -1,7 +1,7 @@
 # Bloxy
 ## Built With
 
-Bloxy is powered by **[Godot Engine](https://godotengine.org)** — an open source game engine.
+Bloxy is powered by **[Godot Engine](https://godotengine.org)** an open source game engine.
 
 ### Godot License
 
