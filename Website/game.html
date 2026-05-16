@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>{{ game.title }} - Bloxy</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+
+<body class="home-body">
+
+<header class="roblox-topbar">
+  <div class="brand">
+    <img src="/logo.png" alt="Bloxy Logo">
+    <span>Bloxy</span>
+  </div>
+
+  <nav class="top-links">
+    <a href="/home">Games</a>
+    <a href="/catalog">Catalog</a>
+    <a href="/develop">Develop</a>
+    <a href="/blocks">Blocks</a>
+    <a href="/chat">Chat</a>
+    <a href="/support">Support</a>
+    <a href="/settings">Settings</a>
+
+    {% if is_admin %}
+      <a href="/admin" class="admin-nav-link">Admin</a>
+    {% endif %}
+  </nav>
+
+  <form class="search-form" action="/search" method="GET">
+    <input
+      name="q"
+      class="search-bar"
+      placeholder="Search games..."
+      autocomplete="off"
+    >
+  </form>
+
+  <div class="user-nav">
+    <span>{{ username }}</span>
+    <span class="blocks-pill">{{ blocks }} Blocks</span>
+    <a href="/logout">Logout</a>
+  </div>
+</header>
+
+<main class="game-page-wrap">
+
+  <section class="game-hero-card">
+
+    <div class="game-thumbnail">
+      <img
+        class="game-thumbnail-img"
+        src="{{ game.icon_url }}"
+        onerror="this.src='/logo.png'"
+        alt="{{ game.title }}"
+      >
+      <span class="game-status-pill">Approved</span>
+    </div>
+
+    <div class="game-main-info">
+      <div class="game-title-row">
+        <div>
+          <h1>{{ game.title }}</h1>
+          <p class="game-creator">By {{ game.creator }}</p>
+        </div>
+      </div>
+
+      <p class="game-description">
+        {{ game.description }}
+      </p>
+
+      <div class="game-stats-row">
+        <div class="game-stat-box">
+          <b id="playersCount">{{ game.players }}</b>
+          <span>Playing</span>
+        </div>
+
+        <div class="game-stat-box">
+          <b>{{ game.max_players }}</b>
+          <span>Max Players</span>
+        </div>
+
+        <div class="game-stat-box">
+          <b>{{ game.godot_version }}</b>
+          <span>Godot Version</span>
+        </div>
+
+        <div class="game-stat-box">
+          <b>{% if game.multiplayer %}Yes{% else %}No{% endif %}</b>
+          <span>Multiplayer</span>
+        </div>
+      </div>
+
+      <div class="game-actions">
+        <button class="play-btn big" onclick="playGame()">
+          ▶ Play
+        </button>
+      </div>
+
+      <p id="playStatus"></p>
+    </div>
+
+  </section>
+
+  <section class="game-content-grid">
+
+    <div class="game-panel">
+      <h2>About This Game</h2>
+      <p>
+        This game was uploaded to Bloxy and approved by staff. Singleplayer games use
+        the client pack only. Multiplayer games use Bloxy server infrastructure.
+      </p>
+
+      <div class="info-list">
+        <div>
+          <span>Game ID</span>
+          <b>{{ game.game_id }}</b>
+        </div>
+
+        <div>
+          <span>Creator</span>
+          <b>{{ game.creator }}</b>
+        </div>
+
+        <div>
+          <span>Platform</span>
+          <b>Bloxy + Godot</b>
+        </div>
+      </div>
+    </div>
+
+    <div class="game-panel">
+      <h2>Server Info</h2>
+
+      <div class="server-status-box">
+        <span class="server-dot"></span>
+        <div>
+          {% if game.multiplayer %}
+            <b>Bloxy Multiplayer Server</b>
+            <p>The server pack runs through Godot headless.</p>
+          {% else %}
+            <b>Singleplayer Game</b>
+            <p>This game only needs the client pack.</p>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="small-note">
+        If the game does not open, make sure Bloxy Player is installed and linked with the browser.
+      </div>
+    </div>
+
+  </section>
+
+</main>
+
+<script>
+const currentGameId = "{{ game.game_id }}";
+
+let heartbeatInterval = null;
+let alreadyClickedPlay = false;
+
+async function playGame() {
+  const status = document.getElementById("playStatus");
+  const playersCount = document.getElementById("playersCount");
+
+  if (alreadyClickedPlay) {
+    status.textContent = "Already opening Bloxy Launcher...";
+    return;
+  }
+
+  alreadyClickedPlay = true;
+
+  try {
+    status.textContent = "Requesting game info...";
+
+    const playRes = await fetch("/api/games/" + encodeURIComponent(currentGameId) + "/play");
+
+    if (!playRes.ok) {
+      const text = await playRes.text();
+      throw new Error("/play failed: HTTP " + playRes.status + " - " + text);
+    }
+
+    const playData = await playRes.json();
+    console.log("PLAY DATA:", playData);
+
+    if (!playData.success) {
+      alreadyClickedPlay = false;
+      status.textContent = playData.error || "Could not start game.";
+      return;
+    }
+
+    if (!playData.join_ticket) {
+      alreadyClickedPlay = false;
+      status.textContent = "No join ticket returned by backend.";
+      console.error("Missing join_ticket:", playData);
+      return;
+    }
+
+    if (!playData.client_pck_url) {
+      alreadyClickedPlay = false;
+      status.textContent = "No client_pck_url returned by backend.";
+      console.error("Missing client_pck_url:", playData);
+      return;
+    }
+
+    status.textContent = "Joining game...";
+
+    const joinRes = await fetch("/api/games/" + encodeURIComponent(currentGameId) + "/join", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        ticket: playData.join_ticket
+      })
+    });
+
+    if (!joinRes.ok) {
+      const text = await joinRes.text();
+      throw new Error("/join failed: HTTP " + joinRes.status + " - " + text);
+    }
+
+    const joinData = await joinRes.json();
+    console.log("JOIN DATA:", joinData);
+
+    if (!joinData.success) {
+      alreadyClickedPlay = false;
+      status.textContent = joinData.error || "Could not join game.";
+      return;
+    }
+
+    if (playersCount && typeof joinData.players !== "undefined") {
+      playersCount.textContent = joinData.players;
+    }
+
+    startHeartbeat();
+
+    status.textContent = "Opening in Bloxy Launcher...";
+
+    let launcherUrl =
+      "bloxy://play/" +
+      encodeURIComponent(playData.game_id) +
+      "?ticket=" +
+      encodeURIComponent(playData.join_ticket) +
+      "&api=" +
+      encodeURIComponent(window.location.origin) +
+      "&client_pck_url=" +
+      encodeURIComponent(playData.client_pck_url) +
+      "&multiplayer=" +
+      encodeURIComponent(playData.multiplayer ? "true" : "false");
+
+    if (playData.multiplayer) {
+      launcherUrl +=
+        "&server_ip=" +
+        encodeURIComponent(playData.server_ip || "") +
+        "&server_port=" +
+        encodeURIComponent(playData.server_port || "");
+    }
+
+    console.log("LAUNCHER URL:", launcherUrl);
+
+    window.location.href = launcherUrl;
+
+  } catch (err) {
+    alreadyClickedPlay = false;
+    console.error("REAL LAUNCHER ERROR:", err);
+    status.textContent = "Launcher error: " + err.message;
+  }
+}
+
+function startHeartbeat() {
+  if (heartbeatInterval) {
+    clearInterval(heartbeatInterval);
+  }
+
+  heartbeatInterval = setInterval(() => {
+    fetch("/api/games/" + encodeURIComponent(currentGameId) + "/heartbeat", {
+      method: "POST"
+    }).catch(err => {
+      console.error("Heartbeat failed:", err);
+    });
+  }, 30000);
+}
+</script>
+</body>
+</html>

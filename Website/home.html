@@ -15,28 +15,29 @@
     <span>Bloxy</span>
   </div>
 
-<nav class="top-links">
-  <a href="/home">Games</a>
-  <a href="/catalog">Catalog</a>
-  <a href="/develop">Develop</a>
-  <a href="/blocks">Blocks</a>
-  <a href="/chat">Chat</a>
-  <a href="/support">Support</a>
-  <a href="/settings">Settings</a>
+  <nav class="top-links">
+    <a href="/home">Games</a>
+    <a href="/catalog">Catalog</a>
+    <a href="/develop">Develop</a>
+    <a href="/blocks">Blocks</a>
+    <a href="/chat">Chat</a>
+    <a href="/support">Support</a>
+    <a href="/settings">Settings</a>
 
-  {% if is_admin %}
-    <a href="/admin" class="admin-nav-link">Admin</a>
-  {% endif %}
-</nav>
+    {% if is_admin %}
+      <a href="/admin" class="admin-nav-link">Admin</a>
+    {% endif %}
   </nav>
 
-  <input
-    id="gameSearchInput"
-    class="search-bar"
-    placeholder="Search Bloxy"
-    autocomplete="off"
-    oninput="searchGames()"
-  />
+  <form class="search-form" action="/search" method="GET">
+    <input
+      id="gameSearchInput"
+      name="q"
+      class="search-bar"
+      placeholder="Search games..."
+      autocomplete="off"
+    />
+  </form>
 
   <div class="user-nav">
     <span>{{ username }}</span>
@@ -126,23 +127,25 @@
       </div>
 
       <div id="gamesGrid" class="old-games-grid">
-        {% for game in games %}
-          <div
-            class="old-game-card"
-            data-title="{{ game.title | lower }}"
-            data-description="{{ game.description | lower }}"
-            onclick="window.location.href='/game/{{ game.id }}'"
-          >
-            <div class="game-img"></div>
-            <h3>{{ game.title }}</h3>
-            <p>{{ game.players }} Playing</p>
-          </div>
-        {% endfor %}
-      </div>
+        {% if games %}
+          {% for game in games %}
+            <div
+              class="old-game-card"
+              onclick="window.location.href='/game/{{ game.id }}'"
+            >
+              <div class="game-img">
+                <img src="{{ game.icon_url }}" onerror="this.src='/logo.png'" alt="{{ game.title }}">
+              </div>
 
-      <p id="noGamesFound" style="display:none; color:#888; margin-top:15px;">
-        No games found.
-      </p>
+              <h3>{{ game.title }}</h3>
+              <p class="game-description">{{ game.description }}</p>
+              <p>{{ game.players }} Playing</p>
+            </div>
+          {% endfor %}
+        {% else %}
+          <p style="color:#888;">No games yet.</p>
+        {% endif %}
+      </div>
     </section>
 
   </section>
@@ -227,29 +230,6 @@ function uploadPFP() {
       alert(d.error || "Upload failed");
     }
   });
-}
-
-function searchGames() {
-  const input = document.getElementById("gameSearchInput");
-  const cards = document.querySelectorAll(".old-game-card");
-  const noGames = document.getElementById("noGamesFound");
-
-  const q = input.value.trim().toLowerCase();
-  let visibleCount = 0;
-
-  cards.forEach(card => {
-    const title = card.dataset.title || "";
-    const description = card.dataset.description || "";
-
-    if (title.includes(q) || description.includes(q)) {
-      card.style.display = "block";
-      visibleCount++;
-    } else {
-      card.style.display = "none";
-    }
-  });
-
-  noGames.style.display = visibleCount === 0 ? "block" : "none";
 }
 </script>
 

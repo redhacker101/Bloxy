@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Search - Bloxy</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+
+<body class="home-body">
+
+<header class="roblox-topbar">
+  <div class="brand">
+    <img src="/logo.png" alt="Bloxy Logo" />
+    <span>Bloxy</span>
+  </div>
+
+  <nav class="top-links">
+    <a href="/home">Games</a>
+    <a href="/catalog">Catalog</a>
+    <a href="/develop">Develop</a>
+    <a href="/blocks">Blocks</a>
+    <a href="/chat">Chat</a>
+    <a href="/support">Support</a>
+    <a href="/settings">Settings</a>
+
+    {% if is_admin %}
+      <a href="/admin" class="admin-nav-link">Admin</a>
+    {% endif %}
+  </nav>
+
+  <form class="search-form" action="/search" method="GET">
+    <input
+      name="q"
+      class="search-bar"
+      placeholder="Search games..."
+      value="{{ query }}"
+      autocomplete="off"
+      autofocus
+    />
+  </form>
+
+  <div class="user-nav">
+    <span>{{ username }}</span>
+    <span class="blocks-pill">{{ blocks }} Blocks</span>
+    <a href="/logout">Logout</a>
+  </div>
+</header>
+
+<main class="oldblox-layout">
+  <section class="main-feed">
+
+    <section class="panel-section">
+      <div class="section-header">
+        {% if query %}
+          <h2>Search results for "{{ query }}"</h2>
+        {% else %}
+          <h2>Search games</h2>
+        {% endif %}
+      </div>
+
+      {% if games %}
+        <div class="old-games-grid">
+          {% for game in games %}
+            <div
+              class="old-game-card"
+              onclick="window.location.href='/game/{{ game.id }}'"
+            >
+              <div class="game-img">
+                <img src="{{ game.icon_url }}" onerror="this.src='/logo.png'" alt="{{ game.title }}">
+              </div>
+
+              <h3>{{ game.title }}</h3>
+              <p class="game-description">{{ game.description }}</p>
+              <p>{{ game.players }} Playing</p>
+              <p>By {{ game.creator }}</p>
+            </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        {% if query %}
+          <p style="color:#888;">No games found.</p>
+        {% else %}
+          <p style="color:#888;">Type a game name in the search bar.</p>
+        {% endif %}
+      {% endif %}
+    </section>
+
+  </section>
+</main>
+
+</body>
+</html>

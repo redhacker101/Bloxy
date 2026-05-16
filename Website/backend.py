@@ -2,14 +2,21 @@ from flask import Flask, request, redirect, session, render_template, jsonify, s
 from flask_socketio import SocketIO, join_room, emit
 from pymongo import MongoClient
 from bson import ObjectId
-from datetime import datetime
+from datetime import datetime , timedelta
 from werkzeug.utils import secure_filename
 import bcrypt
 import re
 import os
 import math
 import stripe
-
+import zipfile
+import uuid
+import shutil
+import subprocess
+import json
+import socket
+import random
+import secrets
 
 app = Flask(__name__, template_folder=".", static_folder=".", static_url_path="")
 app.secret_key = "change-this-secret-key"
@@ -17,15 +24,56 @@ stripe.api_key = "sk_test_51TUgM1PEeETDzLUbe22GNXLu1JKiK3B4vjjJMDCe0z1dQa8jAeB9T
 STRIPE_WEBHOOK_SECRET = ""
 BASE_URL = "http://localhost:5000"
 socketio = SocketIO(app, cors_allowed_origins="*")
-
+GAME_SERVER_TOKEN = os.environ.get("GAME_SERVER_TOKEN", "dev-game-server-token")
 client = MongoClient("mongodb://localhost:27017/")
 db = client["bloxy"]
 
+GAME_PORT_MIN = 30000
+GAME_PORT_MAX = 40000
+
+BLOCKED_PORTS = {
+    22,
+    80,
+    443,
+    422,
+    5000,
+    27017,
+    3306,
+    5432,
+    6379,
+    25565
+}
 users = db["users"]
 messages = db["messages"]
 parties = db["parties"] 
 friend_requests = db["friend_requests"]
 block_transactions = db["block_transactions"]
+games_collection = db["games"]
+join_tickets = db["join_tickets"]
+
+join_tickets.create_index("ticket", unique=True)
+join_tickets.create_index("expires_at")
+games_collection.create_index("game_id", unique=True)
+games_collection.create_index([("status", 1), ("created_at", -1)])
+active_game_players = db["active_game_players"]
+active_game_players.create_index([("game_id", 1), ("username", 1)], unique=True)
+active_game_players.create_index([("last_seen", 1)])
+active_game_players = db["active_game_players"]
+
+active_game_players.create_index(
+    [("game_id", 1), ("server_id", 1), ("peer_id", 1)],
+    unique=True
+)
+
+active_game_players.create_index("last_seen")
+GODOT_HEADLESS_PATH = "./godot-server"
+GAME_UPLOAD_DIR = "game_uploads"
+GAME_EXTRACT_DIR = "game_builds"
+
+os.makedirs(GAME_UPLOAD_DIR, exist_ok=True)
+os.makedirs(GAME_EXTRACT_DIR, exist_ok=True)
+
+ALLOWED_GAME_EXTENSIONS = {"zip"}
 
 block_transactions.create_index([("username", 1), ("created_at", -1)])
 
@@ -80,11 +128,38 @@ support_tickets.create_index([("status", 1), ("created_at", -1)])
 bans.create_index("username", unique=True)
  
 ADMIN_USERS = {"admin"}
+GAME_ICON_DIR = "game_icons"
 
+ALLOWED_GAME_ICON_EXTENSIONS = {"png", "jpg", "jpeg", "webp"}
+
+os.makedirs(GAME_ICON_DIR, exist_ok=True)
+
+def cleanup_inactive_game_players():
+    cutoff = datetime.utcnow() - timedelta(minutes=2)
+
+    stale = list(active_game_players.find(
+        {"last_seen": {"$lt": cutoff}},
+        {"_id": 0, "game_id": 1}
+    ))
+
+    affected_games = set()
+
+    for p in stale:
+        if p.get("game_id"):
+            affected_games.add(p["game_id"])
+
+    active_game_players.delete_many({
+        "last_seen": {"$lt": cutoff}
+    })
+
+    for game_id in affected_games:
+        update_game_player_count(game_id)
 
 def now_iso():
     return datetime.utcnow().isoformat()
 
+def allowed_game_icon(filename):
+    return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_GAME_ICON_EXTENSIONS
 
 def safe_str(value, max_len=250):
     if not isinstance(value, str):
@@ -140,6 +215,58 @@ def user_allows_online_status(user):
     privacy = user.get("privacy", {})
     return privacy.get("show_online", True) is True
 
+def start_game_server(game):
+    server_pck = game.get("server_pck_path")
+    game_id = game.get("game_id", "unknown")
+
+    if not server_pck or not os.path.exists(server_pck):
+        return False, "server.pck not found", None, None
+
+    try:
+        server_port = allocate_game_port()
+    except Exception as e:
+        return False, str(e), None, None
+
+    os.makedirs("game_logs", exist_ok=True)
+
+    log_path = os.path.join("game_logs", f"{game_id}.log")
+    log_file = open(log_path, "a")
+
+    try:
+        proc = subprocess.Popen(
+            [
+                GODOT_HEADLESS_PATH,
+                "--headless",
+                "--main-pack",
+                server_pck,
+                "--",
+                "--bloxy-game-id",
+                game_id,
+                "--bloxy-port",
+                str(server_port)
+            ],
+            stdout=log_file,
+            stderr=log_file,
+            start_new_session=True
+        )
+
+        return True, "Server started", proc.pid, server_port
+
+    except Exception as e:
+        log_file.close()
+        return False, str(e), None, None
+    except Exception as e:
+        log_file.close()
+        return False, str(e), None, None
+def update_game_player_count(game_id):
+    count = active_game_players.count_documents({"game_id": game_id})
+
+    games_collection.update_one(
+        {"game_id": game_id},
+        {"$set": {"players": count}}
+    )
+
+    return count
 BANNED_PATTERNS = re.compile(
     r"(?i)("
     r"\bkys\b|kill yourself|kill urself|\bkms\b|hang yourself|unalive yourself|"
@@ -213,7 +340,6 @@ def require_admin():
 
     return user, None
 
-
 def is_banned(username):
     username = safe_str(username, 20)
 
@@ -221,7 +347,228 @@ def is_banned(username):
         return True
 
     return bans.find_one({"username": username}) is not None
+def allowed_game_file(filename):
+    return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_GAME_EXTENSIONS
 
+
+def safe_extract_zip(zip_ref, target_dir):
+    target_dir = os.path.abspath(target_dir)
+
+    for member in zip_ref.namelist():
+        member_path = os.path.abspath(os.path.join(target_dir, member))
+
+        if not member_path.startswith(target_dir):
+            raise Exception("Unsafe zip path detected")
+
+    zip_ref.extractall(target_dir)
+
+def update_game_player_count(game_id):
+    count = active_game_players.count_documents({
+        "game_id": game_id
+    })
+
+    games_collection.update_one(
+        {"game_id": game_id},
+        {"$set": {"players": count}}
+    )
+
+    return count
+
+def validate_uploaded_game(folder):
+    manifest_path = os.path.join(folder, "manifest.json")
+    client_pck = os.path.join(folder, "client", "client.pck")
+    server_pck = os.path.join(folder, "server", "server.pck")
+
+    if not os.path.exists(manifest_path):
+        return False, "Missing manifest.json", None
+
+    if not os.path.exists(client_pck):
+        return False, "Missing client/client.pck", None
+
+    try:
+        with open(manifest_path, "r", encoding="utf-8") as f:
+            manifest = json.load(f)
+    except Exception:
+        return False, "Invalid manifest.json", None
+
+    required = ["title", "description", "creator", "godot_version", "max_players", "multiplayer"]
+
+    for field in required:
+        if field not in manifest:
+            return False, f"Missing manifest field: {field}", None
+
+    title = safe_str(manifest.get("title"), 60)
+    description = safe_str(manifest.get("description"), 500)
+    creator = safe_str(manifest.get("creator"), 20)
+
+    if not title:
+        return False, "Invalid game title", None
+
+    if not description:
+        return False, "Invalid game description", None
+
+    if not valid_username(creator):
+        return False, "Invalid creator username in manifest", None
+
+    try:
+        max_players = int(manifest.get("max_players"))
+    except Exception:
+        return False, "max_players must be a number", None
+
+    multiplayer = bool(manifest.get("multiplayer"))
+
+    if multiplayer:
+        if max_players < 2 or max_players > 100:
+            return False, "Multiplayer max_players must be between 2 and 100", None
+
+        if not os.path.exists(server_pck):
+            return False, "Multiplayer games must include server/server.pck", None
+    else:
+        max_players = 1
+
+    manifest["title"] = title
+    manifest["description"] = description
+    manifest["creator"] = creator
+    manifest["max_players"] = max_players
+    manifest["multiplayer"] = multiplayer
+
+    return True, "Valid game", manifest
+def is_port_free(port, host="0.0.0.0"):
+    if port in BLOCKED_PORTS:
+        return False
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.settimeout(0.5)
+
+        try:
+            s.bind((host, port))
+            return True
+        except OSError:
+            return False
+
+
+def get_used_game_ports():
+    used_ports = set()
+
+    running_games = games_collection.find(
+        {
+            "server_running": True,
+            "server_port": {"$exists": True}
+        },
+        {
+            "_id": 0,
+            "server_port": 1
+        }
+    )
+
+    for game in running_games:
+        try:
+            used_ports.add(int(game.get("server_port")))
+        except Exception:
+            pass
+
+    return used_ports
+
+
+def allocate_game_port():
+    used_ports = get_used_game_ports()
+
+    for _ in range(200):
+        port = random.randint(GAME_PORT_MIN, GAME_PORT_MAX)
+
+        if port in used_ports:
+            continue
+
+        if port in BLOCKED_PORTS:
+            continue
+
+        if is_port_free(port):
+            return port
+
+    raise Exception("No free game server ports available")
+GAME_SERVER_TOKEN = os.environ.get("GAME_SERVER_TOKEN", "dev-game-server-token")
+
+def require_game_server():
+    token = request.headers.get("X-Bloxy-Server-Token", "")
+
+    if token != GAME_SERVER_TOKEN:
+        return False
+
+    return True
+def start_game_server(game):
+    server_pck = game.get("server_pck_path")
+    game_id = game.get("game_id", "unknown")
+
+    if not server_pck or not os.path.exists(server_pck):
+        return False, "server.pck not found", None, None
+
+    try:
+        server_port = allocate_game_port()
+    except Exception as e:
+        return False, str(e), None, None
+
+    os.makedirs("game_logs", exist_ok=True)
+
+    log_path = os.path.join("game_logs", f"{game_id}.log")
+    log_file = open(log_path, "a")
+
+    try:
+        proc = subprocess.Popen(
+            [
+                "./godot-server",
+                "--headless",
+                "--main-pack",
+                server_pck,
+                "--",
+                "--bloxy-game-id",
+                game_id,
+                "--bloxy-port",
+                str(server_port)
+            ],
+            stdout=log_file,
+            stderr=log_file,
+            start_new_session=True
+        )
+
+        return True, "Server started", proc.pid, server_port
+
+    except Exception as e:
+        log_file.close()
+        return False, str(e), None, None
+def cleanup_inactive_players():
+    cutoff = datetime.utcnow() - timedelta(minutes=2)
+
+    stale_players = list(active_game_players.find(
+        {"last_seen": {"$lt": cutoff}},
+        {"_id": 0, "game_id": 1}
+    ))
+
+    affected_game_ids = set()
+
+    for p in stale_players:
+        affected_game_ids.add(p.get("game_id"))
+
+    active_game_players.delete_many({
+        "last_seen": {"$lt": cutoff}
+    })
+
+    for game_id in affected_game_ids:
+        if game_id:
+            update_game_player_count(game_id)
+def create_join_ticket(username, game_id):
+    ticket = secrets.token_urlsafe(32)
+    expires_at = datetime.utcnow() + timedelta(minutes=2)
+
+    join_tickets.insert_one({
+        "ticket": ticket,
+        "username": username,
+        "game_id": game_id,
+        "created_at": datetime.utcnow(),
+        "expires_at": expires_at,
+        "used": False
+    })
+
+    return ticket
 
 @app.route("/")
 def root():
@@ -327,9 +674,10 @@ def develop():
 @app.route("/home")
 def home():
     user = get_current_user()
+
     if not user:
         return redirect("/login")
-
+    cleanup_inactive_players()
     friend_usernames = user.get("friends", [])
     friends_data = []
 
@@ -339,19 +687,38 @@ def home():
         if valid_username(friend_name):
             friend_user = users.find_one(
                 {"username": friend_name},
-                {"_id": 0, "username": 1, "pfp": 1}
+                {"_id": 0, "username": 1, "pfp": 1, "settings": 1}
             )
 
             if friend_user:
                 friend_show_online = user_allows_online_status(friend_user)
 
                 friends_data.append({
-                "username": friend_user["username"],
-                 "pfp": friend_user.get("pfp"),
-                "online": friend_show_online and friend_user["username"] in online_usernames
-})
+                    "username": friend_user["username"],
+                    "pfp": friend_user.get("pfp"),
+                    "online": friend_show_online and friend_user["username"] in online_usernames
+                })
+
+    approved_game_docs = list(
+        games_collection.find(
+            {"status": "approved"},
+            {"_id": 0}
+        )
+        .sort("created_at", -1)
+        .limit(50)
+    )
 
     games = []
+
+    for g in approved_game_docs:
+        games.append({
+    "id": g.get("game_id"),
+    "title": g.get("title"),
+    "description": g.get("description"),
+    "players": g.get("players", 0),
+    "icon_url": g.get("icon_url") or "/logo.png"
+})
+
 
     return render_template(
         "home.html",
@@ -362,8 +729,363 @@ def home():
         games=games,
         is_admin=is_admin_user(user)
     )
+@app.route("/search")
+def search_page():
+    user = get_current_user()
 
+    if not user:
+        return redirect("/login")
 
+    q = safe_str(request.args.get("q"), 80)
+
+    games = []
+
+    if q:
+        safe_q = re.escape(q)
+
+        game_docs = list(
+            games_collection.find(
+                {
+                    "$and": [
+                        {"status": "approved"},
+                        {
+                            "$or": [
+                                {"title": {"$regex": safe_q, "$options": "i"}},
+                                {"description": {"$regex": safe_q, "$options": "i"}},
+                                {"creator": {"$regex": safe_q, "$options": "i"}}
+                            ]
+                        }
+                    ]
+                },
+                {"_id": 0}
+            )
+            .sort("created_at", -1)
+            .limit(50)
+        )
+
+        for g in game_docs:
+            games.append({
+                "id": g.get("game_id"),
+                "title": g.get("title", ""),
+                "description": g.get("description", ""),
+                "players": g.get("players", 0),
+                "creator": g.get("creator", ""),
+                "icon_url": g.get("icon_url") or "/logo.png"
+            })
+
+    return render_template(
+        "search.html",
+        username=user["username"],
+        blocks=user.get("blocks", 0),
+        pfp=user.get("pfp"),
+        games=games,
+        query=q,
+        is_admin=is_admin_user(user)
+    )
+@app.route("/api/games/<game_id>/join", methods=["POST"])
+def game_player_join(game_id):
+    user = get_current_user()
+
+    if not user:
+        return jsonify({
+            "success": False,
+            "error": "Not logged in"
+        }), 401
+
+    data = request.get_json(silent=True) or {}
+    ticket = safe_str(data.get("ticket"), 200)
+
+    game_id = safe_str(game_id, 80)
+
+    if not game_id or not ticket:
+        return jsonify({
+            "success": False,
+            "error": "Missing game id or ticket"
+        }), 400
+
+    game = games_collection.find_one({
+        "game_id": game_id,
+        "status": "approved"
+    })
+
+    if not game:
+        return jsonify({
+            "success": False,
+            "error": "Game not found or not approved"
+        }), 404
+
+    ticket_doc = join_tickets.find_one({
+        "ticket": ticket,
+        "game_id": game_id,
+        "username": user["username"]
+    })
+
+    if not ticket_doc:
+        return jsonify({
+            "success": False,
+            "error": "Invalid Bloxy ticket"
+        }), 403
+
+    expires_at = ticket_doc.get("expires_at")
+
+    if not expires_at or expires_at < datetime.utcnow():
+        return jsonify({
+            "success": False,
+            "error": "Ticket expired"
+        }), 403
+
+    username = user["username"]
+    now_dt = datetime.utcnow()
+
+    active_game_players.update_one(
+        {
+            "game_id": game_id,
+            "username": username
+        },
+        {
+            "$set": {
+                "game_id": game_id,
+                "username": username,
+                "last_seen": now_dt
+            },
+            "$setOnInsert": {
+                "joined_at": now_dt
+            }
+        },
+        upsert=True
+    )
+
+    count = update_game_player_count(game_id)
+
+    return jsonify({
+        "success": True,
+        "game_id": game_id,
+        "username": username,
+        "players": count
+    })
+@app.route("/api/game-server/verify-ticket", methods=["POST"])
+def verify_join_ticket():
+    if not require_game_server():
+        return jsonify({
+            "success": False,
+            "error": "Invalid game server token"
+        }), 403
+
+    data = request.get_json(silent=True) or {}
+
+    ticket = safe_str(data.get("ticket"), 200)
+    game_id = safe_str(data.get("game_id"), 80)
+    server_id = safe_str(data.get("server_id"), 120)
+    peer_id = safe_str(str(data.get("peer_id")), 80)
+
+    if not ticket or not game_id or not server_id or not peer_id:
+        return jsonify({
+            "success": False,
+            "error": "Missing ticket, game_id, server_id, or peer_id"
+        }), 400
+
+    ticket_doc = join_tickets.find_one({
+        "ticket": ticket,
+        "game_id": game_id,
+        "used": False
+    })
+
+    if not ticket_doc:
+        return jsonify({
+            "success": False,
+            "error": "Invalid ticket"
+        }), 403
+
+    expires_at = ticket_doc.get("expires_at")
+
+    if not expires_at or expires_at < datetime.utcnow():
+        return jsonify({
+            "success": False,
+            "error": "Ticket expired"
+        }), 403
+
+    username = ticket_doc.get("username")
+
+    user = users.find_one(
+        {"username": username},
+        {"_id": 0, "username": 1, "avatar": 1}
+    )
+
+    if not user or is_banned(username):
+        return jsonify({
+            "success": False,
+            "error": "User banned or invalid"
+        }), 403
+
+    now_dt = datetime.utcnow()
+
+    join_tickets.update_one(
+        {"ticket": ticket},
+        {
+            "$set": {
+                "used": True,
+                "used_at": now_dt
+            }
+        }
+    )
+
+    active_game_players.update_one(
+        {
+            "game_id": game_id,
+            "server_id": server_id,
+            "peer_id": peer_id
+        },
+        {
+            "$set": {
+                "game_id": game_id,
+                "server_id": server_id,
+                "peer_id": peer_id,
+                "username": username,
+                "last_seen": now_dt
+            },
+            "$setOnInsert": {
+                "joined_at": now_dt
+            }
+        },
+        upsert=True
+    )
+
+    count = update_game_player_count(game_id)
+
+    avatar = user.get("avatar") or {
+        "skin_color": "#c68642",
+        "shirt_color": "#1f6fff",
+        "pants_color": "#111827",
+        "face_id": "smile"
+    }
+
+    return jsonify({
+        "success": True,
+        "username": username,
+        "game_id": game_id,
+        "avatar": avatar,
+        "players": count
+    })
+@app.route("/api/game-server/player-left", methods=["POST"])
+
+def game_server_player_left():
+    if not require_game_server():
+        return jsonify({
+            "success": False,
+            "error": "Invalid game server token"
+        }), 403
+
+    data = request.get_json(silent=True) or {}
+
+    game_id = safe_str(data.get("game_id"), 80)
+    server_id = safe_str(data.get("server_id"), 120)
+    peer_id = safe_str(str(data.get("peer_id")), 80)
+
+    if not game_id or not server_id or not peer_id:
+        return jsonify({
+            "success": False,
+            "error": "Missing game_id, server_id, or peer_id"
+        }), 400
+
+    active_game_players.delete_one({
+        "game_id": game_id,
+        "server_id": server_id,
+        "peer_id": peer_id
+    })
+
+    count = update_game_player_count(game_id)
+
+    return jsonify({
+        "success": True,
+        "players": count
+    })
+@app.route("/api/games/<game_id>/leave", methods=["POST"])
+def game_player_leave(game_id):
+    user = get_current_user()
+
+    if not user:
+        return jsonify({"success": False, "error": "Not logged in"}), 401
+
+    game_id = safe_str(game_id, 80)
+
+    active_game_players.delete_one({
+        "game_id": game_id,
+        "username": user["username"]
+    })
+
+    count = update_game_player_count(game_id)
+
+    return jsonify({
+        "success": True,
+        "players": count
+    })
+@app.route("/api/games/<game_id>/heartbeat", methods=["POST"])
+def game_player_heartbeat(game_id):
+    user = get_current_user()
+
+    if not user:
+        return jsonify({"success": False, "error": "Not logged in"}), 401
+
+    game_id = safe_str(game_id, 80)
+
+    result = active_game_players.update_one(
+        {
+            "game_id": game_id,
+            "username": user["username"]
+        },
+        {
+            "$set": {
+                "last_seen": datetime.utcnow()
+            }
+        }
+    )
+
+    if result.matched_count == 0:
+        return jsonify({"success": False, "error": "Player not joined"}), 404
+
+    count = update_game_player_count(game_id)
+
+    return jsonify({
+        "success": True,
+        "players": count
+    })
+@app.route("/api/game-server/heartbeat", methods=["POST"])
+def game_server_heartbeat():
+    if not require_game_server():
+        return jsonify({
+            "success": False,
+            "error": "Invalid game server token"
+        }), 403
+
+    data = request.get_json(silent=True) or {}
+
+    game_id = safe_str(data.get("game_id"), 80)
+    server_id = safe_str(data.get("server_id"), 120)
+
+    if not game_id or not server_id:
+        return jsonify({
+            "success": False,
+            "error": "Missing game_id or server_id"
+        }), 400
+
+    active_game_players.update_many(
+        {
+            "game_id": game_id,
+            "server_id": server_id
+        },
+        {
+            "$set": {
+                "last_seen": datetime.utcnow()
+            }
+        }
+    )
+
+    count = update_game_player_count(game_id)
+
+    return jsonify({
+        "success": True,
+        "players": count
+    })
 @app.route("/chat")
 def chat_page():
     user = get_current_user()
@@ -406,6 +1128,209 @@ def logout():
     session.clear()
     return redirect("/login")
 
+@app.route("/upload-game")
+def upload_game_page():
+    user = get_current_user()
+
+    if not user:
+        return redirect("/login")
+
+    return render_template(
+        "upload-game.html",
+        username=user["username"],
+        blocks=user.get("blocks", 0),
+        is_admin=is_admin_user(user)
+    )
+@app.route("/api/games/upload", methods=["POST"])
+def upload_game():
+    user = get_current_user()
+
+    if not user:
+        return jsonify({"success": False, "error": "Not logged in"}), 401
+
+    if "game_zip" not in request.files:
+        return jsonify({"success": False, "error": "No game zip uploaded"}), 400
+
+    file = request.files["game_zip"]
+
+    if file.filename == "":
+        return jsonify({"success": False, "error": "No selected file"}), 400
+
+    if not allowed_game_file(file.filename):
+        return jsonify({"success": False, "error": "Only .zip game uploads are allowed"}), 400
+
+    game_id = str(uuid.uuid4())
+    original_filename = secure_filename(file.filename)
+
+    zip_path = os.path.join(GAME_UPLOAD_DIR, f"{game_id}.zip")
+    extract_path = os.path.join(GAME_EXTRACT_DIR, game_id)
+
+    file.save(zip_path)
+
+    try:
+        os.makedirs(extract_path, exist_ok=True)
+
+        with zipfile.ZipFile(zip_path, "r") as zip_ref:
+            safe_extract_zip(zip_ref, extract_path)
+
+        valid, message, manifest = validate_uploaded_game(extract_path)
+
+        if not valid:
+            shutil.rmtree(extract_path, ignore_errors=True)
+            os.remove(zip_path)
+            return jsonify({"success": False, "error": message}), 400
+
+        is_multiplayer = manifest["multiplayer"]
+
+        game_doc = {
+            "game_id": game_id,
+            "title": manifest["title"],
+            "description": manifest["description"],
+            "creator": user["username"],
+            "manifest_creator": manifest["creator"],
+            "godot_version": manifest["godot_version"],
+            "max_players": manifest["max_players"],
+            "multiplayer": is_multiplayer,
+            "status": "pending",
+            "players": 0,
+            "server_running": False,
+            "server_process_pid": None,
+            "server_port": None,
+            "zip_path": zip_path,
+            "extract_path": extract_path,
+            "client_pck_path": os.path.join(extract_path, "client", "client.pck"),
+            "server_pck_path": os.path.join(extract_path, "server", "server.pck") if is_multiplayer else None,
+            "original_filename": original_filename,
+            "created_at": now_iso(),
+            "approved_at": None,
+            "approved_by": None
+        }
+        games_collection.insert_one(game_doc)
+
+        return jsonify({
+            "success": True,
+            "message": "Game uploaded and sent for admin approval",
+            "game_id": game_id
+        })
+
+    except zipfile.BadZipFile:
+        shutil.rmtree(extract_path, ignore_errors=True)
+        if os.path.exists(zip_path):
+            os.remove(zip_path)
+        return jsonify({"success": False, "error": "Invalid zip file"}), 400
+
+    except Exception as e:
+        shutil.rmtree(extract_path, ignore_errors=True)
+        if os.path.exists(zip_path):
+            os.remove(zip_path)
+        return jsonify({"success": False, "error": str(e)}), 500
+    
+@app.route("/game-icons/<filename>")
+def serve_game_icon(filename):
+    filename = secure_filename(filename)
+    return send_from_directory(GAME_ICON_DIR, filename)
+@app.route("/api/games/<game_id>/icon", methods=["POST"])
+def upload_game_icon(game_id):
+    user = get_current_user()
+
+    if not user:
+        return jsonify({"success": False, "error": "Not logged in"}), 401
+
+    game_id = safe_str(game_id, 80)
+
+    game = games_collection.find_one({"game_id": game_id})
+
+    if not game:
+        return jsonify({"success": False, "error": "Game not found"}), 404
+
+    if game.get("creator") != user["username"]:
+        return jsonify({"success": False, "error": "You can only edit your own games"}), 403
+
+    if "icon" not in request.files:
+        return jsonify({"success": False, "error": "No icon uploaded"}), 400
+
+    file = request.files["icon"]
+
+    if file.filename == "":
+        return jsonify({"success": False, "error": "No selected file"}), 400
+
+    if not allowed_game_icon(file.filename):
+        return jsonify({"success": False, "error": "Only png, jpg, jpeg, and webp icons are allowed"}), 400
+
+    filename = secure_filename(file.filename)
+    ext = filename.rsplit(".", 1)[1].lower()
+
+    final_name = f"{game_id}_icon.{ext}"
+    icon_path = os.path.join(GAME_ICON_DIR, final_name)
+
+    old_icon = game.get("icon")
+
+    if old_icon and old_icon != final_name:
+        old_path = os.path.join(GAME_ICON_DIR, secure_filename(old_icon))
+
+        if os.path.exists(old_path):
+            os.remove(old_path)
+
+    file.save(icon_path)
+
+    games_collection.update_one(
+        {"game_id": game_id},
+        {
+            "$set": {
+                "icon": final_name,
+                "icon_url": f"/game-icons/{final_name}",
+                "updated_at": now_iso()
+            }
+        }
+    )
+
+    return jsonify({
+        "success": True,
+        "icon_url": f"/game-icons/{final_name}"
+    })
+@app.route("/api/games/<game_id>/edit-info", methods=["POST"])
+def edit_game_info(game_id):
+    user = get_current_user()
+
+    if not user:
+        return jsonify({"success": False, "error": "Not logged in"}), 401
+
+    game_id = safe_str(game_id, 80)
+
+    game = games_collection.find_one({"game_id": game_id})
+
+    if not game:
+        return jsonify({"success": False, "error": "Game not found"}), 404
+
+    if game.get("creator") != user["username"]:
+        return jsonify({"success": False, "error": "You can only edit your own games"}), 403
+
+    data = request.get_json(silent=True) or {}
+
+    title = safe_str(data.get("title"), 60)
+    description = safe_str(data.get("description"), 500)
+
+    if len(title) < 3:
+        return jsonify({"success": False, "error": "Title must be at least 3 characters"}), 400
+
+    if len(description) < 10:
+        return jsonify({"success": False, "error": "Description must be at least 10 characters"}), 400
+
+    games_collection.update_one(
+        {"game_id": game_id},
+        {
+            "$set": {
+                "title": title,
+                "description": description,
+                "updated_at": now_iso()
+            }
+        }
+    )
+
+    return jsonify({
+        "success": True,
+        "message": "Game info updated"
+    })
 
 @app.route("/pfp/user/<username>")
 def serve_user_pfp(username):
@@ -781,11 +1706,134 @@ def delete_party():
 @app.route("/game/<game_id>")
 def game_page(game_id):
     user = get_current_user()
+
     if not user:
         return redirect("/login")
 
-    return f"<h1>{game_id}</h1><p>Game page coming soon.</p><a href='/home'>Back</a>"
+    game_id = safe_str(game_id, 80)
 
+    game = games_collection.find_one({
+        "game_id": game_id,
+        "status": "approved"
+    })
+
+    if not game:
+        return "Game not found or not approved", 404
+    game["icon_url"] = game.get("icon_url") or "/logo.png"
+    return render_template(
+        "game.html",
+        username=user["username"],
+        blocks=user.get("blocks", 0),
+        game=game,
+        is_admin=is_admin_user(user)
+    )
+@app.route("/api/games/<game_id>/play")
+def game_play_info(game_id):
+    user = get_current_user()
+
+    if not user:
+        return jsonify({
+            "success": False,
+            "error": "Not logged in"
+        }), 401
+
+    game_id = safe_str(game_id, 80)
+
+    if not game_id:
+        return jsonify({
+            "success": False,
+            "error": "Invalid game id"
+        }), 400
+
+    game = games_collection.find_one({
+        "game_id": game_id,
+        "status": "approved"
+    })
+
+    if not game:
+        return jsonify({
+            "success": False,
+            "error": "Game not found or not approved"
+        }), 404
+
+    if is_banned(user["username"]):
+        return jsonify({
+            "success": False,
+            "error": "This account is banned"
+        }), 403
+
+    join_ticket = create_join_ticket(user["username"], game["game_id"])
+
+    if not game.get("multiplayer"):
+        return jsonify({
+            "success": True,
+            "game_id": game["game_id"],
+            "title": game.get("title", ""),
+            "multiplayer": False,
+            "client_pck_url": f"/api/games/{game_id}/client.pck",
+            "join_ticket": join_ticket
+        })
+
+    server_running = game.get("server_running", False)
+    server_port = game.get("server_port")
+    server_pid = game.get("server_process_pid")
+
+    if not server_running or not server_port or not server_pid:
+        ok, msg, pid, port = start_game_server(game)
+
+        if not ok:
+            return jsonify({
+                "success": False,
+                "error": msg
+            }), 500
+
+        games_collection.update_one(
+            {"game_id": game_id},
+            {
+                "$set": {
+                    "server_running": True,
+                    "server_process_pid": pid,
+                    "server_port": port,
+                    "last_started_at": now_iso()
+                }
+            }
+        )
+
+        server_pid = pid
+        server_port = port
+
+    return jsonify({
+        "success": True,
+        "game_id": game["game_id"],
+        "title": game.get("title", ""),
+        "multiplayer": True,
+        "client_pck_url": f"/api/games/{game_id}/client.pck",
+        "server_ip": "127.0.0.1",
+        "server_port": server_port,
+        "server_pid": server_pid,
+        "join_ticket": join_ticket
+    })
+@app.route("/api/games/<game_id>/client.pck")
+def download_client_pck(game_id):
+    game_id = safe_str(game_id, 80)
+
+    game = games_collection.find_one({
+        "game_id": game_id,
+        "status": "approved"
+    })
+
+    if not game:
+        return "Game not found or not approved", 404
+
+    client_pck_path = game.get("client_pck_path")
+
+    if not client_pck_path or not os.path.exists(client_pck_path):
+        return "client.pck not found", 404
+
+    folder = os.path.dirname(client_pck_path)
+    filename = os.path.basename(client_pck_path)
+
+    return send_from_directory(folder, filename, as_attachment=True)
 
 @socketio.on("connect")
 def on_connect():
@@ -1448,9 +2496,31 @@ def admin_panel():
     if response:
         return response
 
-    ticket_docs = list(support_tickets.find().sort("created_at", -1).limit(100))
-    user_docs = list(users.find({}, {"_id": 0, "username": 1, "blocks": 1, "friends": 1}).sort("username", 1).limit(200))
-    ban_docs = list(bans.find().sort("created_at", -1))
+    ticket_docs = list(
+        support_tickets.find()
+        .sort("created_at", -1)
+        .limit(100)
+    )
+
+    user_docs = list(
+        users.find(
+            {},
+            {"_id": 0, "username": 1, "blocks": 1, "friends": 1}
+        )
+        .sort("username", 1)
+        .limit(200)
+    )
+
+    ban_docs = list(
+        bans.find()
+        .sort("created_at", -1)
+    )
+
+    game_docs = list(
+        games_collection.find()
+        .sort("created_at", -1)
+        .limit(100)
+    )
 
     tickets = []
 
@@ -1490,14 +2560,358 @@ def admin_panel():
             "created_at": b.get("created_at", "")
         })
 
+    uploaded_games = []
+
+    for g in game_docs:
+        uploaded_games.append({
+            "game_id": g.get("game_id", ""),
+            "title": g.get("title", ""),
+            "description": g.get("description", ""),
+            "creator": g.get("creator", ""),
+            "godot_version": g.get("godot_version", ""),
+            "max_players": g.get("max_players", 0),
+            "multiplayer": g.get("multiplayer", False),
+            "status": g.get("status", "pending"),
+            "created_at": g.get("created_at", ""),
+            "server_running": g.get("server_running", False)
+        })
+
     return render_template(
         "admin.html",
         username=admin["username"],
         blocks=admin.get("blocks", 0),
         tickets=tickets,
         users=all_users,
-        banned_users=banned_users
+        banned_users=banned_users,
+        uploaded_games=uploaded_games
     )
+@app.route("/api/admin/games/approve", methods=["POST"])
+def admin_approve_game():
+    admin, response = require_admin()
+
+    if response:
+        return jsonify({"success": False, "error": "Forbidden"}), 403
+
+    data = request.get_json(silent=True) or {}
+    game_id = safe_str(data.get("game_id"), 80)
+
+    if not game_id:
+        return jsonify({"success": False, "error": "Missing game_id"}), 400
+
+    game = games_collection.find_one({"game_id": game_id})
+
+    if not game:
+        return jsonify({"success": False, "error": "Game not found"}), 404
+
+    if game.get("status") == "approved":
+        return jsonify({"success": False, "error": "Game is already approved"}), 400
+
+    if game.get("multiplayer"):
+        ok, msg, pid, server_port = start_game_server(game)
+
+        if not ok:
+            return jsonify({
+                "success": False,
+                "error": msg
+            }), 500
+
+        update_data = {
+            "status": "approved",
+            "approved_at": now_iso(),
+            "approved_by": admin["username"],
+            "server_running": True,
+            "server_process_pid": pid,
+            "server_port": server_port
+        }
+
+        response_data = {
+            "success": True,
+            "message": "Multiplayer game approved and server started",
+            "pid": pid,
+            "server_port": server_port
+        }
+
+    else:
+        update_data = {
+            "status": "approved",
+            "approved_at": now_iso(),
+            "approved_by": admin["username"],
+            "server_running": False,
+            "server_process_pid": None,
+            "server_port": None
+        }
+
+        response_data = {
+            "success": True,
+            "message": "Singleplayer game approved"
+        }
+
+    games_collection.update_one(
+        {"game_id": game_id},
+        {"$set": update_data}
+    )
+
+    return jsonify(response_data)
+@app.route("/api/admin/games/reject", methods=["POST"])
+def admin_reject_game():
+    admin, response = require_admin()
+
+    if response:
+        return jsonify({"success": False, "error": "Forbidden"}), 403
+
+    data = request.get_json(silent=True) or {}
+    game_id = safe_str(data.get("game_id"), 80)
+
+    result = games_collection.update_one(
+        {"game_id": game_id},
+        {
+            "$set": {
+                "status": "rejected",
+                "rejected_at": now_iso(),
+                "rejected_by": admin["username"]
+            }
+        }
+    )
+
+    if result.matched_count == 0:
+        return jsonify({"success": False, "error": "Game not found"}), 404
+
+    return jsonify({"success": True})
+@app.route("/my-games")
+def my_games_page():
+    user = get_current_user()
+
+    if not user:
+        return redirect("/login")
+
+    game_docs = list(
+        games_collection.find(
+            {"creator": user["username"]},
+            {"_id": 0}
+        )
+        .sort("created_at", -1)
+    )
+
+    games = []
+
+    for g in game_docs:
+        icon_url = g.get("icon_url") or "/logo.png"
+
+        games.append({
+            "game_id": g.get("game_id", ""),
+            "title": g.get("title", ""),
+            "description": g.get("description", ""),
+            "status": g.get("status", "pending"),
+            "godot_version": g.get("godot_version", ""),
+            "max_players": g.get("max_players", 0),
+            "multiplayer": g.get("multiplayer", False),
+            "created_at": g.get("created_at", ""),
+            "updated_at": g.get("updated_at", ""),
+            "icon_url": icon_url
+        })
+
+    return render_template(
+        "my_games.html",
+        username=user["username"],
+        blocks=user.get("blocks", 0),
+        pfp=user.get("pfp"),
+        games=games,
+        is_admin=is_admin_user(user)
+    )
+@app.route("/api/games/<game_id>/update", methods=["POST"])
+def update_uploaded_game(game_id):
+    user = get_current_user()
+
+    if not user:
+        return jsonify({"success": False, "error": "Not logged in"}), 401
+
+    game_id = safe_str(game_id, 80)
+
+    game = games_collection.find_one({"game_id": game_id})
+
+    if not game:
+        return jsonify({"success": False, "error": "Game not found"}), 404
+
+    if game.get("creator") != user["username"]:
+        return jsonify({"success": False, "error": "You can only update your own games"}), 403
+
+    if "game_zip" not in request.files:
+        return jsonify({"success": False, "error": "No game zip uploaded"}), 400
+
+    file = request.files["game_zip"]
+
+    if file.filename == "":
+        return jsonify({"success": False, "error": "No selected file"}), 400
+
+    if not allowed_game_file(file.filename):
+        return jsonify({"success": False, "error": "Only .zip files are allowed"}), 400
+
+    old_zip_path = game.get("zip_path")
+    old_extract_path = game.get("extract_path")
+
+    temp_id = str(uuid.uuid4())
+    temp_zip_path = os.path.join(GAME_UPLOAD_DIR, f"update_{temp_id}.zip")
+    temp_extract_path = os.path.join(GAME_EXTRACT_DIR, f"update_{temp_id}")
+
+    file.save(temp_zip_path)
+
+    try:
+        os.makedirs(temp_extract_path, exist_ok=True)
+
+        with zipfile.ZipFile(temp_zip_path, "r") as zip_ref:
+            safe_extract_zip(zip_ref, temp_extract_path)
+
+        valid, message, manifest = validate_uploaded_game(temp_extract_path)
+
+        if not valid:
+            shutil.rmtree(temp_extract_path, ignore_errors=True)
+            if os.path.exists(temp_zip_path):
+                os.remove(temp_zip_path)
+
+            return jsonify({"success": False, "error": message}), 400
+
+        final_zip_path = os.path.join(GAME_UPLOAD_DIR, f"{game_id}.zip")
+        final_extract_path = os.path.join(GAME_EXTRACT_DIR, game_id)
+
+        if old_extract_path and os.path.exists(old_extract_path):
+            shutil.rmtree(old_extract_path, ignore_errors=True)
+
+        if old_zip_path and os.path.exists(old_zip_path):
+            os.remove(old_zip_path)
+
+        if os.path.exists(final_extract_path):
+            shutil.rmtree(final_extract_path, ignore_errors=True)
+
+        shutil.move(temp_extract_path, final_extract_path)
+        shutil.move(temp_zip_path, final_zip_path)
+
+        games_collection.update_one(
+            {"game_id": game_id},
+            {
+                "$set": {
+                    "title": manifest["title"],
+                    "description": manifest["description"],
+                    "manifest_creator": manifest["creator"],
+                    "godot_version": manifest["godot_version"],
+                    "max_players": manifest["max_players"],
+                    "multiplayer": manifest["multiplayer"],
+                    "status": "pending",
+                    "server_running": False,
+                    "server_process_pid": None,
+                    "server_port": None,
+                    "zip_path": final_zip_path,
+                    "extract_path": final_extract_path,
+                    "client_pck_path": os.path.join(final_extract_path, "client", "client.pck"),
+                    "server_pck_path": os.path.join(final_extract_path, "server", "server.pck"),
+                    "updated_at": now_iso(),
+                    "approved_at": None,
+                    "approved_by": None
+                }
+            }
+        )
+
+        return jsonify({
+            "success": True,
+            "message": "Game updated and sent for review"
+        })
+
+    except zipfile.BadZipFile:
+        shutil.rmtree(temp_extract_path, ignore_errors=True)
+        if os.path.exists(temp_zip_path):
+            os.remove(temp_zip_path)
+
+        return jsonify({"success": False, "error": "Invalid zip file"}), 400
+
+    except Exception as e:
+        shutil.rmtree(temp_extract_path, ignore_errors=True)
+        if os.path.exists(temp_zip_path):
+            os.remove(temp_zip_path)
+
+        return jsonify({"success": False, "error": str(e)}), 500
+@app.route("/api/games/<game_id>/delete", methods=["POST"])
+def delete_uploaded_game(game_id):
+    user = get_current_user()
+
+    if not user:
+        return jsonify({"success": False, "error": "Not logged in"}), 401
+
+    game_id = safe_str(game_id, 80)
+
+    game = games_collection.find_one({"game_id": game_id})
+
+    if not game:
+        return jsonify({"success": False, "error": "Game not found"}), 404
+
+    if game.get("creator") != user["username"]:
+        return jsonify({"success": False, "error": "You can only delete your own games"}), 403
+
+    zip_path = game.get("zip_path")
+    extract_path = game.get("extract_path")
+
+    if extract_path and os.path.exists(extract_path):
+        shutil.rmtree(extract_path, ignore_errors=True)
+
+    if zip_path and os.path.exists(zip_path):
+        os.remove(zip_path)
+
+    games_collection.delete_one({"game_id": game_id})
+
+    return jsonify({
+        "success": True,
+        "message": "Game deleted"
+    })
+@app.route("/api/admin/games/<game_id>/manifest")
+def admin_view_game_manifest(game_id):
+    admin, response = require_admin()
+
+    if response:
+        return jsonify({"success": False, "error": "Forbidden"}), 403
+
+    game_id = safe_str(game_id, 80)
+
+    game = games_collection.find_one({"game_id": game_id})
+
+    if not game:
+        return jsonify({"success": False, "error": "Game not found"}), 404
+
+    manifest_path = os.path.join(game["extract_path"], "manifest.json")
+
+    if not os.path.exists(manifest_path):
+        return jsonify({"success": False, "error": "Manifest not found"}), 404
+
+    with open(manifest_path, "r", encoding="utf-8") as f:
+        manifest = json.load(f)
+
+    return jsonify({
+        "success": True,
+        "manifest": manifest
+    })
+
+
+@app.route("/api/admin/games/<game_id>/download")
+def admin_download_game_zip(game_id):
+    admin, response = require_admin()
+
+    if response:
+        return redirect("/login")
+
+    game_id = safe_str(game_id, 80)
+
+    game = games_collection.find_one({"game_id": game_id})
+
+    if not game:
+        return "Game not found", 404
+
+    zip_path = game.get("zip_path")
+
+    if not zip_path or not os.path.exists(zip_path):
+        return "Zip not found", 404
+
+    folder = os.path.dirname(zip_path)
+    filename = os.path.basename(zip_path)
+
+    return send_from_directory(folder, filename, as_attachment=True)
+
 @app.route("/api/admin/unban", methods=["POST"])
 def admin_unban_user():
     admin, response = require_admin()

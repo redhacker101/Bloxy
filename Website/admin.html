@@ -38,12 +38,13 @@
 
   <section class="admin-hero">
     <h1>Bloxy Admin Panel</h1>
-    <p>Manage users, bans, reports, and support tickets.</p>
+    <p>Manage users, bans, uploaded games, and support tickets.</p>
 
     <div class="mini-badges">
       <span>Admin: {{ username }}</span>
       <span>{{ tickets|length }} Tickets</span>
       <span>{{ banned_users|length }} Banned</span>
+      <span>{{ uploaded_games|length }} Games</span>
     </div>
   </section>
 
@@ -80,6 +81,42 @@
       {% endif %}
     </div>
 
+  </section>
+
+  <section class="admin-card full-width">
+    <h2>Uploaded Games</h2>
+
+    {% if uploaded_games %}
+      {% for game in uploaded_games %}
+        <div class="ticket-card">
+          <div class="ticket-top">
+            <h3>{{ game.title }}</h3>
+            <span class="ticket-status">{{ game.status }}</span>
+          </div>
+
+          <p><b>Game ID:</b> {{ game.game_id }}</p>
+          <p><b>Creator:</b> {{ game.creator }}</p>
+          <p><b>Description:</b> {{ game.description }}</p>
+          <p><b>Godot:</b> {{ game.godot_version }}</p>
+          <p><b>Max Players:</b> {{ game.max_players }}</p>
+          <p><b>Multiplayer:</b> {{ game.multiplayer }}</p>
+          <p><b>Uploaded:</b> {{ game.created_at }}</p>
+          <p><b>Server Running:</b> {{ game.server_running }}</p>
+
+          <button onclick="viewManifest('{{ game.game_id }}')">View Manifest</button>
+          <button onclick="window.location.href='/api/admin/games/{{ game.game_id }}/download'">Download Zip</button>
+
+          {% if game.status == "pending" %}
+            <button onclick="approveGame('{{ game.game_id }}')">Approve + Start Server</button>
+            <button class="danger-btn" onclick="rejectGame('{{ game.game_id }}')">Reject</button>
+          {% endif %}
+
+          <pre id="manifest-{{ game.game_id }}" class="manifest-box"></pre>
+        </div>
+      {% endfor %}
+    {% else %}
+      <p class="muted-text">No uploaded games yet.</p>
+    {% endif %}
   </section>
 
   <section class="admin-card full-width">
@@ -181,10 +218,7 @@ function banUser() {
   fetch("/api/admin/ban", {
     method: "POST",
     headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({
-      username,
-      reason
-    })
+    body: JSON.stringify({ username, reason })
   })
   .then(r => r.json())
   .then(d => {
@@ -266,19 +300,13 @@ function replyTicket(ticketId) {
   });
 }
 
-</script>
-<script>
 function deleteTicket(ticketId) {
-  if (!confirm("Delete this support ticket forever?")) {
-    return;
-  }
+  if (!confirm("Delete this support ticket forever?")) return;
 
   fetch("/api/admin/tickets/delete", {
     method: "POST",
     headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({
-      ticket_id: ticketId
-    })
+    body: JSON.stringify({ ticket_id: ticketId })
   })
   .then(r => r.json())
   .then(d => {
@@ -291,6 +319,61 @@ function deleteTicket(ticketId) {
     window.location.reload();
   });
 }
+
+function viewManifest(gameId) {
+  fetch("/api/admin/games/" + encodeURIComponent(gameId) + "/manifest")
+    .then(r => r.json())
+    .then(d => {
+      if (!d.success) {
+        alert(d.error || "Could not load manifest");
+        return;
+      }
+
+      const box = document.getElementById("manifest-" + gameId);
+      box.style.display = "block";
+      box.textContent = JSON.stringify(d.manifest, null, 2);
+    });
+}
+
+function approveGame(gameId) {
+  if (!confirm("Approve this game and start its server?")) return;
+
+  fetch("/api/admin/games/approve", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({ game_id: gameId })
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (!d.success) {
+      alert(d.error || "Approval failed");
+      return;
+    }
+
+    alert("Game approved. Server PID: " + d.pid);
+    window.location.reload();
+  });
+}
+
+function rejectGame(gameId) {
+  if (!confirm("Reject this game?")) return;
+
+  fetch("/api/admin/games/reject", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({ game_id: gameId })
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (!d.success) {
+      alert(d.error || "Reject failed");
+      return;
+    }
+
+    window.location.reload();
+  });
+}
 </script>
+
 </body>
 </html>

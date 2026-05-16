@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Upload Game - Bloxy</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+
+<body class="home-body">
+
+<header class="roblox-topbar">
+  <div class="brand">
+    <img src="/logo.png" alt="Bloxy Logo">
+    <span>Bloxy</span>
+  </div>
+
+  <nav class="top-links">
+    <a href="/home">Games</a>
+    <a href="/catalog">Catalog</a>
+    <a href="/develop">Develop</a>
+    <a href="/blocks">Blocks</a>
+    <a href="/chat">Chat</a>
+    <a href="/support">Support</a>
+    <a href="/settings">Settings</a>
+
+    {% if is_admin %}
+      <a href="/admin" class="admin-nav-link">Admin</a>
+    {% endif %}
+  </nav>
+
+  <input class="search-bar" placeholder="Search Bloxy">
+
+  <div class="user-nav">
+    <span>{{ username }}</span>
+    <span class="blocks-pill">{{ blocks }} Blocks</span>
+    <a href="/logout">Logout</a>
+  </div>
+</header>
+
+<main class="upload-page">
+  <section class="upload-hero">
+    <div class="upload-icon">⬢</div>
+
+    <h1>Upload a Bloxy Game</h1>
+
+    <p>
+      Submit a zipped Godot multiplayer game for review. After approval, Bloxy
+      will run the server pack and make the game available to players.
+    </p>
+
+    <div class="upload-format-box">
+<pre>
+    Multiplayer:
+
+    my_bloxy_game.zip
+├── manifest.json
+├── client/
+│   └── client.pck
+└── server/
+    └── server.pck
+    
+ Singleplayer:
+
+   manifest.json
+client/
+  client.pck
+
+</pre>
+    </div>
+
+    <form id="uploadGameForm">
+      <input type="file" id="gameZip" accept=".zip" hidden required>
+
+      <button type="button" id="uploadBtn" class="big-upload-btn">
+        Choose Zip & Upload
+      </button>
+    </form>
+
+    <p id="selectedFileName" class="selected-file-name"></p>
+    <p id="uploadStatus" class="upload-status"></p>
+  </section>
+</main>
+
+<script>
+const fileInput = document.getElementById("gameZip");
+const uploadBtn = document.getElementById("uploadBtn");
+const statusText = document.getElementById("uploadStatus");
+const selectedFileName = document.getElementById("selectedFileName");
+
+uploadBtn.addEventListener("click", () => {
+  fileInput.click();
+});
+
+fileInput.addEventListener("change", async () => {
+  if (!fileInput.files.length) return;
+
+  const file = fileInput.files[0];
+
+  selectedFileName.textContent = "Selected: " + file.name;
+  statusText.textContent = "Uploading...";
+  uploadBtn.disabled = true;
+  uploadBtn.textContent = "Uploading...";
+
+  const fd = new FormData();
+  fd.append("game_zip", file);
+
+  try {
+    const res = await fetch("/api/games/upload", {
+      method: "POST",
+      body: fd
+    });
+
+    const data = await res.json();
+
+    if (!data.success) {
+      statusText.textContent = "Upload failed: " + (data.error || "Unknown error");
+      uploadBtn.disabled = false;
+      uploadBtn.textContent = "Choose Zip & Upload";
+      return;
+    }
+
+    statusText.textContent = "Uploaded successfully. Waiting for admin approval.";
+    uploadBtn.textContent = "Uploaded";
+  } catch (err) {
+    statusText.textContent = "Upload failed. Server error.";
+    uploadBtn.disabled = false;
+    uploadBtn.textContent = "Choose Zip & Upload";
+  }
+});
+</script>
+
+</body>
+</html>

@@ -1,0 +1,26 @@
+# Python junk
+__pycache__/
+*.pyc
+*.pyo
+
+# Virtual environment
+venv/
+.env/
+
+# Secrets
+.env
+
+# Logs
+*.log
+
+# Databases / local data
+*.db
+*.sqlite
+*.sqlite3
+
+# Node stuff if you add it later
+node_modules/
+
+# OS/editor junk
+.DS_Store
+.vscode/
