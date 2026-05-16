@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>Search - Bloxy</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+
+<body class="home-body">
+
+<header class="roblox-topbar">
+  <div class="brand" onclick="window.location.href='/home'">
+    <img src="/logo.png" alt="Bloxy Logo" />
+    <span>Bloxy</span>
+  </div>
+
+  <nav class="top-links">
+    <a href="/home">Home</a>
+    <a href="/discover?sort=most_liked">Discover</a>
+    <a href="/catalog">Catalog</a>
+    <a href="/develop">Develop</a>
+    <a href="/blocks">Blocks</a>
+    <a href="/chat">Chat</a>
+    <a href="/support">Support</a>
+    <a href="/settings">Settings</a>
+    <a href="/download">Download</a>
+
+    {% if is_admin %}
+      <a href="/admin" class="admin-nav-link">Admin</a>
+    {% endif %}
+  </nav>
+
+  <form class="search-form search-combo" action="/search" method="GET">
+    <select name="type" class="search-type-select">
+      <option value="games" {% if search_type == "games" %}selected{% endif %}>Games</option>
+      <option value="accounts" {% if search_type == "accounts" %}selected{% endif %}>Accounts</option>
+    </select>
+
+    <input
+      name="q"
+      class="search-bar"
+      placeholder="Search Bloxy..."
+      value="{{ query }}"
+      autocomplete="off"
+      autofocus
+    />
+  </form>
+
+  <div class="user-nav">
+    <span>{{ username }}</span>
+    <span class="blocks-pill">{{ blocks }} Blocks</span>
+    <a href="/logout">Logout</a>
+  </div>
+</header>
+
+<main class="oldblox-layout">
+  <section class="main-feed">
+
+    <section class="panel-section">
+      <div class="section-header">
+        {% if query %}
+          {% if search_type == "accounts" %}
+            <h2>Account results for "{{ query }}"</h2>
+          {% else %}
+            <h2>Game results for "{{ query }}"</h2>
+          {% endif %}
+        {% else %}
+          <h2>Search Bloxy</h2>
+        {% endif %}
+      </div>
+
+      {% if search_type == "games" %}
+        {% if games %}
+          <div class="old-games-grid">
+            {% for game in games %}
+              <div
+                class="old-game-card"
+                onclick="window.location.href='/game/{{ game.id }}'"
+              >
+                <div class="game-img">
+                  <img
+                    src="{{ game.icon_url }}"
+                    onerror="this.src='/logo.png'"
+                    alt="{{ game.title }}"
+                  >
+                </div>
+
+                <h3>{{ game.title }}</h3>
+                <p class="game-description">{{ game.description }}</p>
+                <p>{{ game.players }} Playing</p>
+                <p>By {{ game.creator }}</p>
+              </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          {% if query %}
+            <p class="empty-search-text">No games found.</p>
+          {% else %}
+            <p class="empty-search-text">Type a game name in the search bar.</p>
+          {% endif %}
+        {% endif %}
+      {% endif %}
+
+      {% if search_type == "accounts" %}
+        {% if accounts %}
+          <div class="account-results">
+            {% for account in accounts %}
+              <div class="account-result-card">
+                <img
+                  src="/pfp/user/{{ account.username }}"
+                  onerror="this.src='/logo.png'"
+                  alt="{{ account.username }}"
+                >
+
+                <div class="account-result-info">
+                  <h3>{{ account.username }}</h3>
+                  <p>{{ account.friends_count }} Friends • {{ account.blocks }} Blocks</p>
+                </div>
+
+                <div class="account-result-actions">
+                  <button onclick="window.location.href='/profile/{{ account.username }}'">View</button>
+                  <button onclick="sendFriendRequest('{{ account.username }}')">Add Friend</button>
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          {% if query %}
+            <p class="empty-search-text">No accounts found.</p>
+          {% else %}
+            <p class="empty-search-text">Type a username in the search bar.</p>
+          {% endif %}
+        {% endif %}
+      {% endif %}
+
+    </section>
+
+  </section>
+</main>
+
+<script>
+function sendFriendRequest(username) {
+  fetch("/api/friends/request", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({ username })
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (!d.success) {
+      alert(d.error || "Could not send request");
+      return;
+    }
+
+    alert("Friend request sent");
+  })
+  .catch(() => {
+    alert("Server error");
+  });
+}
+</script>
+
+</body>
+</html>

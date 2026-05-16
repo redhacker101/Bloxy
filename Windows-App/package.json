@@ -1,0 +1,57 @@
+{
+  "name": "bloxy",
+  "version": "1.0.0",
+  "description": "Bloxy Desktop App",
+  "main": "main.js",
+  "author": "Bloxy",
+  "license": "Apache 2.0",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win",
+    "dist:win": "electron-builder --win"
+  },
+  "dependencies": {
+    "axios": "^1.16.0"
+  },
+  "devDependencies": {
+    "electron": "latest",
+    "electron-builder": "latest"
+  },
+  "build": {
+    "appId": "com.playbloxy.launcher",
+    "productName": "Bloxy",
+    "files": [
+      "main.js",
+      "logo.png",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "godot-client.exe",
+        "to": "godot-client.exe"
+      }
+    ],
+    "extraMetadata": {
+      "main": "main.js"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "logo.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Bloxy"
+    },
+    "protocols": [
+      {
+        "name": "Bloxy Launcher",
+        "schemes": [
+          "bloxy"
+        ]
+      }
+    ]
+  }
+}

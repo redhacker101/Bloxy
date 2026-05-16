@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>{{ page_title }} - Bloxy</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+
+<body class="home-body">
+
+<header class="roblox-topbar">
+  <div class="brand" onclick="window.location.href='/home'">
+    <img src="/logo.png" alt="Bloxy Logo" />
+    <span>Bloxy</span>
+  </div>
+
+  <nav class="top-links">
+    <a href="/home">Home</a>
+    <a href="/discover?sort=most_liked" class="active">Discover</a>
+    <a href="/catalog">Catalog</a>
+    <a href="/develop">Develop</a>
+    <a href="/blocks">Blocks</a>
+    <a href="/chat">Chat</a>
+    <a href="/support">Support</a>
+    <a href="/settings">Settings</a>
+    <a href="/download">Download</a>
+
+    {% if is_admin %}
+      <a href="/admin" class="admin-nav-link">Admin</a>
+    {% endif %}
+  </nav>
+
+  <form class="search-form search-combo" action="/search" method="GET">
+    <select name="type" class="search-type-select">
+      <option value="games">Games</option>
+      <option value="accounts">Accounts</option>
+    </select>
+
+    <input
+      name="q"
+      class="search-bar"
+      placeholder="Search Bloxy..."
+      autocomplete="off"
+    />
+  </form>
+
+  <div class="user-nav">
+    <span>{{ username }}</span>
+    <span class="blocks-pill">{{ blocks }} Blocks</span>
+    <a href="/logout">Logout</a>
+  </div>
+</header>
+
+<main class="roblox-discover-page">
+
+  <section class="roblox-discover-top">
+    <h1>Discover</h1>
+
+    <div class="roblox-discover-tabs">
+      <a
+        class="{% if sort == 'most_liked' %}active{% endif %}"
+        href="/discover?sort=most_liked"
+      >
+        Most Liked
+      </a>
+
+      <a
+        class="{% if sort == 'favorites' %}active{% endif %}"
+        href="/discover?sort=favorites"
+      >
+        Favorites
+      </a>
+
+      <a
+        class="{% if sort == 'most_comments' %}active{% endif %}"
+        href="/discover?sort=most_comments"
+      >
+        Most Comments
+      </a>
+
+      <a
+        class="{% if sort == 'most_players' %}active{% endif %}"
+        href="/discover?sort=most_players"
+      >
+        Most Players
+      </a>
+
+      <a
+        class="{% if sort == 'newest' %}active{% endif %}"
+        href="/discover?sort=newest"
+      >
+        Newest
+      </a>
+    </div>
+  </section>
+
+  {% if games %}
+
+    <section class="roblox-game-row-section">
+      <div class="roblox-row-header">
+        <h2>{{ page_title }}</h2>
+      </div>
+
+      <div class="roblox-game-row">
+        {% for game in games %}
+          <div
+            class="roblox-game-tile"
+            onclick="window.location.href='/game/{{ game.id }}'"
+          >
+            <div class="roblox-game-thumb">
+              <img
+                src="{{ game.icon_url }}"
+                onerror="this.src='/logo.png'"
+                alt="{{ game.title }}"
+              />
+            </div>
+
+            <h3>{{ game.title }}</h3>
+
+            <div class="roblox-game-meta">
+              {% if sort == "most_liked" %}
+                <span>👍 {{ game.likes }}</span>
+                <span>👥 {{ game.players }}</span>
+
+              {% elif sort == "favorites" %}
+                <span>⭐ {{ game.favorites }}</span>
+                <span>👥 {{ game.players }}</span>
+
+              {% elif sort == "most_comments" %}
+                <span>💬 {{ game.comments if game.comments is defined else 0 }}</span>
+                <span>👍 {{ game.likes }}</span>
+
+              {% elif sort == "most_players" %}
+                <span>👥 {{ game.players }}</span>
+                <span>👍 {{ game.likes }}</span>
+
+              {% elif sort == "newest" %}
+                <span>New</span>
+                <span>👥 {{ game.players }}</span>
+
+              {% else %}
+                <span>👍 {{ game.likes }}</span>
+                <span>👥 {{ game.players }}</span>
+              {% endif %}
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    </section>
+
+  {% else %}
+
+    <section class="roblox-empty-discover">
+      {% if sort == "favorites" %}
+        <h2>No favorites yet</h2>
+        <p>You have not favorited any games yet.</p>
+        <button onclick="window.location.href='/discover?sort=newest'">
+          Browse New Games
+        </button>
+      {% else %}
+        <h2>No games found</h2>
+        <p>No games found in this category yet.</p>
+        <button onclick="window.location.href='/discover?sort=newest'">
+          See Newest Games
+        </button>
+      {% endif %}
+    </section>
+
+  {% endif %}
+
+</main>
+
+</body>
+</html>

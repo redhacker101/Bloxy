@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Admin Tickets</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+
+<body class="home-body">
+
+<header class="roblox-topbar">
+  <div class="brand">
+    <img src="/logo.png" alt="Bloxy Logo">
+    <span>Bloxy</span>
+  </div>
+
+  <nav class="top-links">
+    <a href="/home">Home</a>
+    <a href="/discover?sort=most_liked">Discover</a>
+    <a href="/catalog">Catalog</a>
+    <a href="/develop">Develop</a>
+    <a href="/blocks">Blocks</a>
+    <a href="/chat">Chat</a>
+    <a href="/support">Support</a>
+    <a href="/admin/tickets">Admin Tickets</a>
+    <a href="/support">Support</a>
+    <a href="/settings">Settings</a>
+    <a href="/download">Download</a>
+
+  </nav>
+
+  <input class="search-bar" placeholder="Search Bloxy">
+
+  <div class="user-nav">
+    <span>{{ username }}</span>
+    <span class="blocks-pill">{{ blocks }} Blocks</span>
+    <a href="/logout">Logout</a>
+  </div>
+</header>
+
+<main class="oldblox-layout">
+  <section class="main-feed">
+
+    <section class="panel-section">
+      <div class="section-header">
+        <h2>Admin Support Tickets</h2>
+        <span class="see-all">{{ tickets|length }} total</span>
+      </div>
+
+      <div class="ticket-list">
+        {% if tickets %}
+          {% for ticket in tickets %}
+            <div class="ticket-card">
+              <div class="ticket-top">
+                <h3>{{ ticket.subject }}</h3>
+                <span class="ticket-status">{{ ticket.status }}</span>
+              </div>
+
+              <p><b>User:</b> {{ ticket.username }}</p>
+              <p><b>Category:</b> {{ ticket.category }}</p>
+              <p><b>Created:</b> {{ ticket.created_at }}</p>
+              <p>{{ ticket.message }}</p>
+
+              {% if ticket.admin_reply %}
+                <div class="admin-reply">
+                  <b>Current Reply:</b>
+                  <p>{{ ticket.admin_reply }}</p>
+                </div>
+              {% endif %}
+
+              <textarea id="reply-{{ ticket.id }}" placeholder="Write support reply..."></textarea>
+
+              <select id="status-{{ ticket.id }}">
+                <option value="answered">answered</option>
+                <option value="open">open</option>
+                <option value="closed">closed</option>
+              </select>
+
+              <button onclick="replyTicket('{{ ticket.id }}')">Send Reply</button>
+            </div>
+          {% endfor %}
+        {% else %}
+          <p class="muted-text">No tickets yet.</p>
+        {% endif %}
+      </div>
+    </section>
+
+  </section>
+</main>
+
+<script>
+function replyTicket(ticketId) {
+  const reply = document.getElementById("reply-" + ticketId).value.trim();
+  const status = document.getElementById("status-" + ticketId).value;
+
+  fetch("/api/admin/tickets/reply", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({
+      ticket_id: ticketId,
+      reply,
+      status
+    })
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (!d.success) {
+      alert(d.error || "Could not reply.");
+      return;
+    }
+
+    alert("Reply sent.");
+    window.location.reload();
+  });
+}
+</script>
+
+</body>
+</html>

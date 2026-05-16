@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>Bloxy Home</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+
+<body class="home-body">
+
+<header class="roblox-topbar">
+  <div class="brand" onclick="window.location.href='/home'">
+    <img src="/logo.png" alt="Bloxy Logo" />
+    <span>Bloxy</span>
+  </div>
+
+  <nav class="top-links">
+    <a href="/home" class="active">Home</a>
+    <a href="/discover?sort=most_liked">Discover</a>
+    <a href="/catalog">Catalog</a>
+    <a href="/develop">Develop</a>
+    <a href="/blocks">Blocks</a>
+    <a href="/chat">Chat</a>
+    <a href="/support">Support</a>
+    <a href="/settings">Settings</a>
+    <a href="/download">Download</a>
+
+    {% if is_admin %}
+      <a href="/admin" class="admin-nav-link">Admin</a>
+    {% endif %}
+  </nav>
+
+  <form class="search-form search-combo" action="/search" method="GET">
+    <select name="type" class="search-type-select">
+      <option value="games">Games</option>
+      <option value="accounts">Accounts</option>
+    </select>
+
+    <input
+      id="globalSearchInput"
+      name="q"
+      class="search-bar"
+      placeholder="Search Bloxy..."
+      autocomplete="off"
+    />
+  </form>
+
+  <div class="user-nav">
+    <span>{{ username }}</span>
+    <span class="blocks-pill">{{ blocks }} Blocks</span>
+    <a href="/logout">Logout</a>
+  </div>
+</header>
+
+<main class="oldblox-layout">
+  <section class="main-feed">
+
+    <section class="profile-hero">
+      <div class="pfp-section clean-pfp-section">
+        <img
+          id="pfpPreview"
+          class="pfp-img"
+          src="{% if pfp %}/pfp/{{ pfp }}{% else %}/logo.png{% endif %}"
+          onerror="this.src='/logo.png'"
+          alt="Profile picture"
+        >
+      </div>
+
+      <div class="profile-hero-text">
+        <h1>{{ username }}</h1>
+
+        <div class="mini-badges">
+          <span>Player</span>
+          <span>Builder</span>
+          <span>{{ blocks }} Blocks</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel-section">
+    <section class="panel-section">
+      <div class="section-header">
+        <h2>Friends ({{ friends|length }})</h2>
+        <a class="blue-link-btn" href="/chat">Requests / DMs</a>
+      </div>
+
+      <div class="friends-row">
+        {% if friends %}
+          {% for friend in friends %}
+            <div class="friend-card" onclick="openDM('{{ friend.username }}')">
+              <div class="friend-avatar">
+                <img
+                  src="/pfp/user/{{ friend.username }}"
+                  onerror="this.src='/logo.png'"
+                  alt="{{ friend.username }}"
+                >
+
+                {% if friend.online %}
+                  <span class="status-dot online"></span>
+                {% else %}
+                  <span class="status-dot offline"></span>
+                {% endif %}
+              </div>
+
+              <div class="friend-name">
+                {{ friend.username }}
+              </div>
+            </div>
+          {% endfor %}
+        {% else %}
+          <p class="empty-friends">No friends yet.</p>
+        {% endif %}
+      </div>
+    </section>
+
+    <section class="panel-section">
+      <div class="section-header">
+        <h2>Recently Played</h2>
+        <button type="button" onclick="window.location.href='/discover?sort=newest'">
+          Browse Games
+        </button>
+      </div>
+
+      <div id="gamesGrid" class="old-games-grid">
+        {% if games %}
+          {% for game in games %}
+            <div
+              class="old-game-card"
+              onclick="window.location.href='/game/{{ game.id }}'"
+            >
+              <div class="game-img">
+                <img
+                  src="{{ game.icon_url }}"
+                  onerror="this.src='/logo.png'"
+                  alt="{{ game.title }}"
+                >
+              </div>
+
+              <h3>{{ game.title }}</h3>
+              <p class="game-description">{{ game.description }}</p>
+              <p>{{ game.players }} Playing</p>
+
+              {% if game.likes is defined %}
+                <p>{{ game.likes }} Likes • {{ game.favorites }} Favorites</p>
+              {% endif %}
+            </div>
+          {% endfor %}
+        {% else %}
+          <div class="empty-state-box">
+            <p>No recently played games yet.</p>
+            <button onclick="window.location.href='/discover?sort=newest'">
+              Browse Games
+            </button>
+          </div>
+        {% endif %}
+      </div>
+    </section>
+
+  </section>
+</main>
+
+<script>
+function openDM(username) {
+  window.location.href = "/chat?dm=" + encodeURIComponent(username);
+}
+</script>
+
+</body>
+</html>

@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>{{ profile.username }} - Bloxy</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+
+<body class="home-body">
+
+<header class="roblox-topbar">
+  <div class="brand" onclick="window.location.href='/home'">
+    <img src="/logo.png" alt="Bloxy Logo" />
+    <span>Bloxy</span>
+  </div>
+
+  <nav class="top-links">
+    <a href="/home">Home</a>
+    <a href="/discover?sort=most_liked">Discover</a>
+    <a href="/catalog">Catalog</a>
+    <a href="/develop">Develop</a>
+    <a href="/blocks">Blocks</a>
+    <a href="/chat">Chat</a>
+    <a href="/support">Support</a>
+    <a href="/settings">Settings</a>
+    <a href="/download">Download</a>
+
+    {% if is_admin %}
+      <a href="/admin" class="admin-nav-link">Admin</a>
+    {% endif %}
+  </nav>
+
+  <form class="search-form search-combo" action="/search" method="GET">
+    <select name="type" class="search-type-select">
+      <option value="games">Games</option>
+      <option value="accounts">Accounts</option>
+    </select>
+
+    <input
+      name="q"
+      class="search-bar"
+      placeholder="Search Bloxy..."
+      autocomplete="off"
+    />
+  </form>
+
+  <div class="user-nav">
+    <span>{{ username }}</span>
+    <span class="blocks-pill">{{ blocks }} Blocks</span>
+    <a href="/logout">Logout</a>
+  </div>
+</header>
+
+<main class="profile-page">
+
+  <section class="profile-main-card">
+    <div class="profile-left">
+      <img
+        class="profile-big-pfp"
+        src="/pfp/user/{{ profile.username }}"
+        onerror="this.src='/logo.png'"
+        alt="{{ profile.username }}"
+      >
+    </div>
+
+    <div class="profile-main-info">
+      <h1>{{ profile.username }}</h1>
+
+      <div class="profile-stats">
+        <span>{{ friend_count }} Friends</span>
+        <span>{{ profile_blocks }} Blocks</span>
+        <span>{{ created_games|length }} Created Games</span>
+      </div>
+
+      <p class="profile-bio">
+        This user is building their Bloxy profile.
+      </p>
+
+      <div class="profile-actions">
+        {% if is_own_profile %}
+          <button onclick="window.location.href='/settings'">Edit Profile</button>
+        {% else %}
+          {% if is_friend %}
+            <button onclick="window.location.href='/chat?dm={{ profile.username }}'">Message</button>
+            <button class="secondary-profile-btn" onclick="removeFriend('{{ profile.username }}')">
+              Remove Friend
+            </button>
+          {% elif pending_request %}
+            <button class="secondary-profile-btn" disabled>Request Pending</button>
+          {% else %}
+            <button onclick="sendFriendRequest('{{ profile.username }}')">Add Friend</button>
+          {% endif %}
+        {% endif %}
+      </div>
+
+      <p id="profileActionStatus" class="profile-action-status"></p>
+    </div>
+  </section>
+
+  <section class="profile-content-grid">
+
+    <section class="panel-section profile-panel profile-wide-panel">
+      <div class="section-header">
+        <h2>Recently Played</h2>
+      </div>
+
+      {% if profile_recent_games %}
+        <div class="old-games-grid">
+          {% for game in profile_recent_games %}
+            <div
+              class="old-game-card"
+              onclick="window.location.href='/game/{{ game.id }}'"
+            >
+              <div class="game-img">
+                <img
+                  src="{{ game.icon_url }}"
+                  onerror="this.src='/logo.png'"
+                  alt="{{ game.title }}"
+                >
+              </div>
+
+              <h3>{{ game.title }}</h3>
+              <p class="game-description">{{ game.description }}</p>
+              <p>{{ game.players }} Playing</p>
+              {% if game.creator %}
+                <p>By {{ game.creator }}</p>
+              {% endif %}
+            </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p class="empty-profile-text">No recently played games yet.</p>
+      {% endif %}
+    </section>
+
+    <section class="panel-section profile-panel profile-wide-panel">
+      <div class="section-header">
+        <h2>Created Games</h2>
+      </div>
+
+      {% if created_games %}
+        <div class="old-games-grid">
+          {% for game in created_games %}
+            <div
+              class="old-game-card"
+              onclick="window.location.href='/game/{{ game.id }}'"
+            >
+              <div class="game-img">
+                <img
+                  src="{{ game.icon_url }}"
+                  onerror="this.src='/logo.png'"
+                  alt="{{ game.title }}"
+                >
+              </div>
+
+              <h3>{{ game.title }}</h3>
+              <p class="game-description">{{ game.description }}</p>
+              <p>{{ game.players }} Playing</p>
+            </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p class="empty-profile-text">No approved games yet.</p>
+      {% endif %}
+    </section>
+
+    <section class="panel-section profile-panel profile-wide-panel">
+      <div class="section-header">
+        <h2>Friends</h2>
+      </div>
+
+      {% if friends_preview %}
+        <div class="profile-friends-grid">
+          {% for friend in friends_preview %}
+            <div
+              class="profile-friend-card"
+              onclick="window.location.href='/profile/{{ friend.username }}'"
+            >
+              <img
+                src="/pfp/user/{{ friend.username }}"
+                onerror="this.src='/logo.png'"
+                alt="{{ friend.username }}"
+              >
+              <span>{{ friend.username }}</span>
+            </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p class="empty-profile-text">No friends shown.</p>
+      {% endif %}
+    </section>
+
+  </section>
+
+</main>
+
+<script>
+function setProfileStatus(message, good) {
+  const status = document.getElementById("profileActionStatus");
+  status.textContent = message;
+  status.style.color = good ? "#22c55e" : "#ff6666";
+}
+
+function sendFriendRequest(username) {
+  fetch("/api/friends/request", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({ username })
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (!d.success) {
+      setProfileStatus(d.error || "Could not send friend request.", false);
+      return;
+    }
+
+    setProfileStatus("Friend request sent.", true);
+
+    setTimeout(() => {
+      window.location.reload();
+    }, 700);
+  })
+  .catch(() => {
+    setProfileStatus("Server error.", false);
+  });
+}
+
+function removeFriend(username) {
+  fetch("/api/friends/remove", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({ username })
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (!d.success) {
+      setProfileStatus(d.error || "Could not remove friend.", false);
+      return;
+    }
+
+    setProfileStatus("Friend removed.", true);
+
+    setTimeout(() => {
+      window.location.reload();
+    }, 700);
+  })
+  .catch(() => {
+    setProfileStatus("Server error.", false);
+  });
+}
+</script>
+
+</body>
+</html>

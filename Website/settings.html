@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>Bloxy Settings</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+
+<body class="home-body">
+
+<header class="roblox-topbar">
+  <div class="brand" onclick="window.location.href='/home'">
+    <img src="/logo.png" alt="Bloxy Logo" />
+    <span>Bloxy</span>
+  </div>
+
+  <nav class="top-links">
+    <a href="/home">Home</a>
+    <a href="/discover?sort=most_liked">Discover</a>
+    <a href="/catalog">Catalog</a>
+    <a href="/develop">Develop</a>
+    <a href="/blocks">Blocks</a>
+    <a href="/chat">Chat</a>
+    <a href="/support">Support</a>
+    <a href="/settings" class="active">Settings</a>
+    <a href="/download">Download</a>
+
+    {% if is_admin %}
+      <a href="/admin" class="admin-nav-link">Admin</a>
+    {% endif %}
+  </nav>
+
+  <form class="search-form search-combo" action="/search" method="GET">
+    <select name="type" class="search-type-select">
+      <option value="games">Games</option>
+      <option value="accounts">Accounts</option>
+    </select>
+
+    <input
+      name="q"
+      class="search-bar"
+      placeholder="Search Bloxy..."
+      autocomplete="off"
+    />
+  </form>
+
+  <div class="user-nav">
+    <span>{{ username }}</span>
+    <span class="blocks-pill">{{ blocks }} Blocks</span>
+    <a href="/logout">Logout</a>
+  </div>
+</header>
+
+<main class="settings-page">
+
+  <section class="settings-hero">
+    <div>
+      <h1>Settings</h1>
+      <p>Manage your profile picture, public profile, password, privacy, and account security.</p>
+    </div>
+
+    <div class="settings-profile-card">
+      <img
+        id="settingsPfpPreview"
+        src="/pfp/user/{{ username }}?t={{ username }}"
+        onerror="this.src='/logo.png'"
+        alt="Profile Picture"
+      >
+
+      <div class="settings-profile-info">
+        <h3>{{ username }}</h3>
+        <p>{{ blocks }} Blocks</p>
+
+        <input
+          type="file"
+          id="settingsPfpInput"
+          hidden
+          accept="image/png,image/jpeg,image/jpg,image/webp"
+        >
+
+        <div class="settings-pfp-actions">
+          <button type="button" onclick="settingsPfpInput.click()">Choose PFP</button>
+          <button type="button" onclick="uploadSettingsPFP()">Upload</button>
+        </div>
+
+        <p id="pfpStatus" class="settings-status"></p>
+      </div>
+    </div>
+  </section>
+
+  <section class="settings-grid">
+
+    <div class="settings-card">
+      <h2>Profile</h2>
+      <p>Edit your public Bloxy profile.</p>
+
+      <label>Status</label>
+      <input
+        id="profileStatusInput"
+        type="text"
+        placeholder="What are you doing?"
+        value="{{ status or '' }}"
+        maxlength="80"
+      >
+
+      <label>Bio</label>
+      <textarea
+        id="profileBioInput"
+        placeholder="Write something about yourself..."
+        maxlength="300"
+      >{{ bio or '' }}</textarea>
+
+      <button onclick="saveProfileSettings()">Save Profile</button>
+
+      <p id="profileSettingsStatus" class="settings-status"></p>
+    </div>
+
+    <div class="settings-card">
+      <h2>Change Password</h2>
+      <p>Use this if you know your current password and want to change it.</p>
+
+      <input id="currentPassword" type="password" placeholder="Current password">
+      <input id="newPassword" type="password" placeholder="New password">
+      <input id="confirmPassword" type="password" placeholder="Confirm new password">
+
+      <button onclick="changePassword()">Change Password</button>
+
+      <p id="passwordStatus" class="settings-status"></p>
+    </div>
+
+    <div class="settings-card">
+      <h2>Privacy</h2>
+      <p>Control who can interact with your account.</p>
+
+      <label>Friend Requests</label>
+      <select id="friendRequests">
+        <option value="everyone" {% if privacy.friend_requests == "everyone" %}selected{% endif %}>Everyone</option>
+        <option value="no_one" {% if privacy.friend_requests == "no_one" %}selected{% endif %}>No one</option>
+      </select>
+
+      <label>Messages</label>
+      <select id="messagesSetting">
+        <option value="friends" {% if privacy.messages == "friends" %}selected{% endif %}>Friends only</option>
+        <option value="no_one" {% if privacy.messages == "no_one" %}selected{% endif %}>No one</option>
+      </select>
+
+      <label class="settings-check">
+        <input id="showOnline" type="checkbox" {% if privacy.show_online %}checked{% endif %}>
+        Show online status
+      </label>
+
+      <button onclick="savePrivacy()">Save Privacy</button>
+
+      <p id="privacyStatus" class="settings-status"></p>
+    </div>
+
+    <div class="settings-card danger-settings-card">
+      <h2>Account Security</h2>
+      <p>Forgot your password? Use the reset request page.</p>
+
+      <a href="/forgot-password" class="settings-link-btn">Password Reset Request</a>
+      <a href="/logout" class="settings-link-btn danger-link">Logout</a>
+    </div>
+
+  </section>
+
+</main>
+
+<script>
+function setStatus(id, message, good) {
+  const el = document.getElementById(id);
+
+  if (!el) {
+    return;
+  }
+
+  el.textContent = message;
+  el.style.color = good ? "#22c55e" : "#ff6666";
+}
+
+function uploadSettingsPFP() {
+  const input = document.getElementById("settingsPfpInput");
+  const preview = document.getElementById("settingsPfpPreview");
+  const status = document.getElementById("pfpStatus");
+
+  const file = input.files[0];
+
+  if (!file) {
+    status.textContent = "Choose an image first.";
+    status.style.color = "#ff6666";
+    return;
+  }
+
+  const fd = new FormData();
+  fd.append("file", file);
+
+  fetch("/api/pfp/upload", {
+    method: "POST",
+    body: fd
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (!d.success) {
+      status.textContent = d.error || "Upload failed.";
+      status.style.color = "#ff6666";
+      return;
+    }
+
+    preview.src = "/pfp/" + d.pfp + "?t=" + Date.now();
+    status.textContent = "Profile picture updated.";
+    status.style.color = "#22c55e";
+  })
+  .catch(() => {
+    status.textContent = "Server error.";
+    status.style.color = "#ff6666";
+  });
+}
+
+function saveProfileSettings() {
+  const status = document.getElementById("profileStatusInput").value;
+  const bio = document.getElementById("profileBioInput").value;
+
+  fetch("/api/settings/profile", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({
+      status,
+      bio
+    })
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (!d.success) {
+      setStatus("profileSettingsStatus", d.error || "Could not save profile.", false);
+      return;
+    }
+
+    setStatus("profileSettingsStatus", "Profile updated.", true);
+  })
+  .catch(() => {
+    setStatus("profileSettingsStatus", "Server error.", false);
+  });
+}
+
+function changePassword() {
+  const current_password = document.getElementById("currentPassword").value;
+  const new_password = document.getElementById("newPassword").value;
+  const confirm_password = document.getElementById("confirmPassword").value;
+
+  fetch("/api/settings/change-password", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({
+      current_password,
+      new_password,
+      confirm_password
+    })
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (!d.success) {
+      setStatus("passwordStatus", d.error || "Password change failed.", false);
+      return;
+    }
+
+    document.getElementById("currentPassword").value = "";
+    document.getElementById("newPassword").value = "";
+    document.getElementById("confirmPassword").value = "";
+
+    setStatus("passwordStatus", "Password changed successfully.", true);
+  })
+  .catch(() => {
+    setStatus("passwordStatus", "Server error.", false);
+  });
+}
+
+function savePrivacy() {
+  const friend_requests = document.getElementById("friendRequests").value;
+  const messages = document.getElementById("messagesSetting").value;
+  const show_online = document.getElementById("showOnline").checked;
+
+  fetch("/api/settings/privacy", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({
+      friend_requests,
+      messages,
+      show_online
+    })
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (!d.success) {
+      setStatus("privacyStatus", d.error || "Could not save privacy settings.", false);
+      return;
+    }
+
+    setStatus("privacyStatus", "Privacy settings saved.", true);
+  })
+  .catch(() => {
+    setStatus("privacyStatus", "Server error.", false);
+  });
+}
+</script>
+
+</body>
+</html>

@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Buy Blocks</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+
+<body class="home-body">
+
+<header class="roblox-topbar">
+  <div class="brand">
+    <img src="/logo.png" alt="Bloxy Logo" />
+    <span>Bloxy</span>
+  </div>
+
+  <nav class="top-links">
+    <a href="/home">Home</a>
+    <a href="/discover?sort=most_liked">Discover</a>
+    <a href="/catalog">Catalog</a>
+    <a href="/develop">Develop</a>
+    <a href="/blocks">Blocks</a>
+    <a href="/chat">Chat</a>
+    <a href="/support">Support</a>
+    <a href="/settings">Settings</a>
+    <a href="/download">Download</a>
+  </nav>
+
+  <input class="search-bar" placeholder="Search Bloxy" />
+
+  <div class="user-nav">
+    <span>{{ username }}</span>
+    <span id="topBlocks" class="blocks-pill">{{ blocks }} Blocks</span>
+    <a href="/logout">Logout</a>
+  </div>
+</header>
+
+<main class="oldblox-layout">
+  <section class="main-feed">
+
+    <section class="panel-section">
+      <div class="section-header">
+        <h2>Buy Blocks</h2>
+        <span id="balanceText" class="blocks-pill">{{ blocks }} Blocks</span>
+      </div>
+
+      <div class="old-games-grid">
+
+        <div class="old-game-card block-pack">
+          <div class="game-img block-img">100</div>
+          <h3>100 Blocks</h3>
+          <p>$1.00</p>
+          <button onclick="buyBlocks('100')">Buy</button>
+        </div>
+
+        <div class="old-game-card block-pack">
+          <div class="game-img block-img">500</div>
+          <h3>500 Blocks</h3>
+          <p>$5.00</p>
+          <button onclick="buyBlocks('500')">Buy</button>
+        </div>
+
+        <div class="old-game-card block-pack">
+          <div class="game-img block-img">1000</div>
+          <h3>1,000 Blocks</h3>
+          <p>$10.00</p>
+          <button onclick="buyBlocks('1000')">Buy</button>
+        </div>
+
+        <div class="old-game-card block-pack">
+          <div class="game-img block-img">2500</div>
+          <h3>2,500 Blocks</h3>
+          <p>$25.00</p>
+          <button onclick="buyBlocks('2500')">Buy</button>
+        </div>
+
+      </div>
+
+      <p id="buyStatus" style="margin-top: 18px; color: #ccc;"></p>
+    </section>
+
+  </section>
+</main>
+
+<script>
+function buyBlocks(packId) {
+  const status = document.getElementById("buyStatus");
+
+  status.textContent = "Opening Stripe checkout...";
+
+  fetch("/api/blocks/buy", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      pack_id: packId
+    })
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (!d.success) {
+      status.textContent = d.error || "Purchase failed";
+      return;
+    }
+
+    window.location.href = d.checkout_url;
+  })
+  .catch(() => {
+    status.textContent = "Server error";
+  });
+}
+</script>
+
+</body>
+</html>

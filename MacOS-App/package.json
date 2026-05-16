@@ -1,0 +1,54 @@
+{
+  "name": "bloxy",
+  "version": "1.0.0",
+  "description": "Bloxy Desktop App",
+  "main": "main.js",
+  "author": "Bloxy",
+  "license": "Apache 2.0",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --mac",
+    "dist:mac": "electron-builder --mac"
+  },
+  "dependencies": {
+    "axios": "^1.16.0"
+  },
+  "devDependencies": {
+    "electron": "latest",
+    "electron-builder": "latest"
+  },
+  "build": {
+    "appId": "com.playbloxy.launcher",
+    "productName": "Bloxy",
+    "files": [
+      "main.js",
+      "logo.png",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "Godot.app",
+        "to": "Godot.app"
+      }
+    ],
+    "extraMetadata": {
+      "main": "main.js"
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.games",
+      "icon": "logo.icns"
+    },
+    "protocols": [
+      {
+        "name": "Bloxy Launcher",
+        "schemes": [
+          "bloxy"
+        ]
+      }
+    ]
+  }
+}

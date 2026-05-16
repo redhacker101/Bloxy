@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bloxy Support</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+
+<body class="home-body">
+
+<header class="roblox-topbar">
+  <div class="brand">
+    <img src="/logo.png" alt="Bloxy Logo">
+    <span>Bloxy</span>
+  </div>
+
+  <nav class="top-links">
+    <a href="/home">Home</a>
+    <a href="/discover?sort=most_liked">Discover</a>
+    <a href="/catalog">Catalog</a>
+    <a href="/develop">Develop</a>
+    <a href="/blocks">Blocks</a>
+    <a href="/chat">Chat</a>
+    <a href="/support">Support</a>
+    <a href="/settings">Settings</a>
+    <a href="/download">Download</a>
+  </nav>
+
+
+  <input class="search-bar" placeholder="Search Bloxy">
+
+  <div class="user-nav">
+    <span>{{ username }}</span>
+    <span class="blocks-pill">{{ blocks }} Blocks</span>
+    <a href="/logout">Logout</a>
+  </div>
+</header>
+
+<main class="oldblox-layout">
+  <section class="main-feed">
+
+    <div class="profile-hero">
+      <div>
+        <h1>Bloxy Support</h1>
+        <p>Need help? Submit a ticket or email us at <b>{{ support_email }}</b>.</p>
+
+        <div class="mini-badges">
+          <span>Support Center</span>
+          <span>Tickets</span>
+          <span>Help</span>
+        </div>
+      </div>
+    </div>
+
+    <section class="panel-section">
+      <div class="section-header">
+        <h2>Create Support Ticket</h2>
+        <a class="blue-link-btn" href="/my-tickets">My Tickets</a>
+      </div>
+
+      <div class="support-form">
+        <label>Category</label>
+        <select id="category">
+          <option>Account problem</option>
+          <option>Blocks/payment issue</option>
+          <option>Report user</option>
+          <option>Bug report</option>
+          <option>Appeal ban</option>
+          <option>Other</option>
+        </select>
+
+        <label>Subject</label>
+        <input id="subject" placeholder="Short title...">
+
+        <label>Message</label>
+        <textarea id="message" placeholder="Explain the problem..."></textarea>
+
+        <button onclick="submitTicket()">Submit Ticket</button>
+
+        <p id="ticketStatus"></p>
+      </div>
+    </section>
+
+  </section>
+</main>
+
+<script>
+function submitTicket() {
+  const category = document.getElementById("category").value;
+  const subject = document.getElementById("subject").value.trim();
+  const message = document.getElementById("message").value.trim();
+  const status = document.getElementById("ticketStatus");
+
+  fetch("/api/support/ticket", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({
+      category,
+      subject,
+      message
+    })
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (!d.success) {
+      status.textContent = d.error || "Could not submit ticket.";
+      status.style.color = "#ff6666";
+      return;
+    }
+
+    status.textContent = "Ticket submitted successfully.";
+    status.style.color = "#22c55e";
+
+    document.getElementById("subject").value = "";
+    document.getElementById("message").value = "";
+  });
+}
+</script>
+
+</body>
+</html>

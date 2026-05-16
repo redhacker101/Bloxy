@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>Download - Bloxy</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+
+<body class="home-body">
+
+<header class="roblox-topbar">
+  <div class="brand" onclick="window.location.href='/home'">
+    <img src="/logo.png" alt="Bloxy Logo" />
+    <span>Bloxy</span>
+  </div>
+
+  <nav class="top-links">
+    <a href="/home">Home</a>
+    <a href="/discover?sort=most_liked">Discover</a>
+    <a href="/catalog">Catalog</a>
+    <a href="/develop">Develop</a>
+    <a href="/blocks">Blocks</a>
+    <a href="/chat">Chat</a>
+    <a href="/support">Support</a>
+    <a href="/settings">Settings</a>
+    <a href="/download"class="active">Download</a>
+
+    {% if is_admin %}
+      <a href="/admin" class="admin-nav-link">Admin</a>
+    {% endif %}
+  </nav>
+
+  <form class="search-form search-combo" action="/search" method="GET">
+    <select name="type" class="search-type-select">
+      <option value="games">Games</option>
+      <option value="accounts">Accounts</option>
+    </select>
+
+    <input
+      name="q"
+      class="search-bar"
+      placeholder="Search Bloxy..."
+      autocomplete="off"
+    />
+  </form>
+
+  <div class="user-nav">
+    <span>{{ username }}</span>
+    <span class="blocks-pill">{{ blocks }} Blocks</span>
+    <a href="/logout">Logout</a>
+  </div>
+</header>
+
+<main class="download-page">
+  <section class="download-hero">
+    <div class="download-hero-left">
+      <div class="download-kicker">Official Bloxy Launcher</div>
+
+      <h1>Download Bloxy</h1>
+
+      <p>
+        Install the Bloxy launcher to play Bloxy games directly from the website.
+        The launcher runs downloaded games using the built-in Godot runtime.
+      </p>
+
+      <div class="download-buttons">
+        <a
+          class="download-btn primary"
+          href="https://github.com/redhacker101/bloxy/releases"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Download Latest Release
+        </a>
+
+        <a
+          class="download-btn secondary"
+          href="https://github.com/redhacker101/bloxy"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          View Source Code
+        </a>
+      </div>
+    </div>
+
+    <div class="download-logo-card">
+      <img src="/logo.png" alt="Bloxy Logo" />
+      <h2>Bloxy Launcher</h2>
+      <p>Required to play Bloxy games.</p>
+    </div>
+  </section>
+
+  <section class="download-grid">
+    <div class="download-platform-card">
+      <h3>Linux</h3>
+      <p>Use the AppImage or .deb build from GitHub Releases.</p>
+      <span>AppImage / .deb</span>
+    </div>
+
+    <div class="download-platform-card">
+      <h3>Windows</h3>
+      <p>Windows installer will be available from the same releases page.</p>
+      <span>Installer</span>
+    </div>
+
+    <div class="download-platform-card">
+  <h3>macOS</h3>
+  <p>Download the macOS build from GitHub Releases when available.</p>
+  <span>DMG / ZIP</span>
+</div>
+</body>
+</html>

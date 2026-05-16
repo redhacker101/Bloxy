@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>My Tickets</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+
+<body class="home-body">
+
+<header class="roblox-topbar">
+  <div class="brand">
+    <img src="/logo.png" alt="Bloxy Logo">
+    <span>Bloxy</span>
+  </div>
+
+  <nav class="top-links">
+    <a href="/home">Home</a>
+    <a href="/discover?sort=most_liked">Discover</a>
+    <a href="/catalog">Catalog</a>
+    <a href="/develop">Develop</a>
+    <a href="/blocks">Blocks</a>
+    <a href="/chat">Chat</a>
+    <a href="/support">Support</a>
+    <a href="/download">Download</a>
+  </nav>
+
+  <input class="search-bar" placeholder="Search Bloxy">
+
+  <div class="user-nav">
+    <span>{{ username }}</span>
+    <span class="blocks-pill">{{ blocks }} Blocks</span>
+    <a href="/logout">Logout</a>
+  </div>
+</header>
+
+<main class="oldblox-layout">
+  <section class="main-feed">
+
+    <section class="panel-section">
+      <div class="section-header">
+        <h2>My Support Tickets</h2>
+        <a class="blue-link-btn" href="/support">New Ticket</a>
+      </div>
+
+      <div class="ticket-list">
+        {% if tickets %}
+          {% for ticket in tickets %}
+            <div class="ticket-card">
+              <div class="ticket-top">
+                <h3>{{ ticket.subject }}</h3>
+                <span class="ticket-status">{{ ticket.status }}</span>
+              </div>
+
+              <p><b>Category:</b> {{ ticket.category }}</p>
+              <p><b>Created:</b> {{ ticket.created_at }}</p>
+              <p>{{ ticket.message }}</p>
+
+              {% if ticket.admin_reply %}
+                <div class="admin-reply">
+                  <b>Support Reply:</b>
+                  <p>{{ ticket.admin_reply }}</p>
+                </div>
+              {% else %}
+                <p class="muted-text">No reply yet.</p>
+              {% endif %}
+            </div>
+          {% endfor %}
+        {% else %}
+          <p class="muted-text">You have not created any support tickets yet.</p>
+        {% endif %}
+      </div>
+    </section>
+
+  </section>
+</main>
+
+</body>
+</html>
