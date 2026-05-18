@@ -81,7 +81,7 @@
         >
 
         <div class="settings-pfp-actions">
-          <button type="button" onclick="settingsPfpInput.click()">Choose PFP</button>
+          <button type="button" onclick="document.getElementById('settingsPfpInput').click()">Choose PFP</button>
           <button type="button" onclick="uploadSettingsPFP()">Upload</button>
         </div>
 
@@ -96,7 +96,7 @@
       <h2>Profile</h2>
       <p>Edit your public Bloxy profile.</p>
 
-      <label>Status</label>
+      <label for="profileStatusInput">Status</label>
       <input
         id="profileStatusInput"
         type="text"
@@ -105,14 +105,19 @@
         maxlength="80"
       >
 
-      <label>Bio</label>
+      <label for="profileBioInput">Bio</label>
       <textarea
         id="profileBioInput"
         placeholder="Write something about yourself..."
         maxlength="300"
       >{{ bio or '' }}</textarea>
 
-      <button onclick="saveProfileSettings()">Save Profile</button>
+      <div class="settings-small-counts">
+        <span id="statusCount">0 / 80</span>
+        <span id="bioCount">0 / 300</span>
+      </div>
+
+      <button type="button" onclick="saveProfileSettings()">Save Profile</button>
 
       <p id="profileSettingsStatus" class="settings-status"></p>
     </div>
@@ -125,7 +130,7 @@
       <input id="newPassword" type="password" placeholder="New password">
       <input id="confirmPassword" type="password" placeholder="Confirm new password">
 
-      <button onclick="changePassword()">Change Password</button>
+      <button type="button" onclick="changePassword()">Change Password</button>
 
       <p id="passwordStatus" class="settings-status"></p>
     </div>
@@ -134,13 +139,13 @@
       <h2>Privacy</h2>
       <p>Control who can interact with your account.</p>
 
-      <label>Friend Requests</label>
+      <label for="friendRequests">Friend Requests</label>
       <select id="friendRequests">
         <option value="everyone" {% if privacy.friend_requests == "everyone" %}selected{% endif %}>Everyone</option>
         <option value="no_one" {% if privacy.friend_requests == "no_one" %}selected{% endif %}>No one</option>
       </select>
 
-      <label>Messages</label>
+      <label for="messagesSetting">Messages</label>
       <select id="messagesSetting">
         <option value="friends" {% if privacy.messages == "friends" %}selected{% endif %}>Friends only</option>
         <option value="no_one" {% if privacy.messages == "no_one" %}selected{% endif %}>No one</option>
@@ -151,7 +156,7 @@
         Show online status
       </label>
 
-      <button onclick="savePrivacy()">Save Privacy</button>
+      <button type="button" onclick="savePrivacy()">Save Privacy</button>
 
       <p id="privacyStatus" class="settings-status"></p>
     </div>
@@ -180,6 +185,21 @@ function setStatus(id, message, good) {
   el.style.color = good ? "#22c55e" : "#ff6666";
 }
 
+function updateCounts() {
+  const statusInput = document.getElementById("profileStatusInput");
+  const bioInput = document.getElementById("profileBioInput");
+  const statusCount = document.getElementById("statusCount");
+  const bioCount = document.getElementById("bioCount");
+
+  if (statusInput && statusCount) {
+    statusCount.textContent = statusInput.value.length + " / 80";
+  }
+
+  if (bioInput && bioCount) {
+    bioCount.textContent = bioInput.value.length + " / 300";
+  }
+}
+
 function uploadSettingsPFP() {
   const input = document.getElementById("settingsPfpInput");
   const preview = document.getElementById("settingsPfpPreview");
@@ -196,8 +216,12 @@ function uploadSettingsPFP() {
   const fd = new FormData();
   fd.append("file", file);
 
+  status.textContent = "Uploading...";
+  status.style.color = "#94a3b8";
+
   fetch("/api/pfp/upload", {
     method: "POST",
+    credentials: "same-origin",
     body: fd
   })
   .then(r => r.json())
@@ -208,7 +232,7 @@ function uploadSettingsPFP() {
       return;
     }
 
-    preview.src = "/pfp/" + d.pfp + "?t=" + Date.now();
+    preview.src = "/pfp/user/{{ username }}?t=" + Date.now();
     status.textContent = "Profile picture updated.";
     status.style.color = "#22c55e";
   })
@@ -219,23 +243,37 @@ function uploadSettingsPFP() {
 }
 
 function saveProfileSettings() {
-  const status = document.getElementById("profileStatusInput").value;
-  const bio = document.getElementById("profileBioInput").value;
+  const statusInput = document.getElementById("profileStatusInput");
+  const bioInput = document.getElementById("profileBioInput");
+
+  const status = statusInput.value.trim();
+  const bio = bioInput.value.trim();
+
+  setStatus("profileSettingsStatus", "Saving...", true);
 
   fetch("/api/settings/profile", {
     method: "POST",
-    headers: {"Content-Type": "application/json"},
+    credentials: "same-origin",
+    headers: {
+      "Content-Type": "application/json"
+    },
     body: JSON.stringify({
-      status,
-      bio
+      status: status,
+      bio: bio
     })
   })
-  .then(r => r.json())
-  .then(d => {
-    if (!d.success) {
+  .then(async r => {
+    const d = await r.json();
+
+    if (!r.ok || !d.success) {
       setStatus("profileSettingsStatus", d.error || "Could not save profile.", false);
       return;
     }
+
+    statusInput.value = d.status || "";
+    bioInput.value = d.bio || "";
+
+    updateCounts();
 
     setStatus("profileSettingsStatus", "Profile updated.", true);
   })
@@ -251,7 +289,10 @@ function changePassword() {
 
   fetch("/api/settings/change-password", {
     method: "POST",
-    headers: {"Content-Type": "application/json"},
+    credentials: "same-origin",
+    headers: {
+      "Content-Type": "application/json"
+    },
     body: JSON.stringify({
       current_password,
       new_password,
@@ -283,7 +324,10 @@ function savePrivacy() {
 
   fetch("/api/settings/privacy", {
     method: "POST",
-    headers: {"Content-Type": "application/json"},
+    credentials: "same-origin",
+    headers: {
+      "Content-Type": "application/json"
+    },
     body: JSON.stringify({
       friend_requests,
       messages,
@@ -303,6 +347,21 @@ function savePrivacy() {
     setStatus("privacyStatus", "Server error.", false);
   });
 }
+
+document.addEventListener("DOMContentLoaded", () => {
+  updateCounts();
+
+  const statusInput = document.getElementById("profileStatusInput");
+  const bioInput = document.getElementById("profileBioInput");
+
+  if (statusInput) {
+    statusInput.addEventListener("input", updateCounts);
+  }
+
+  if (bioInput) {
+    bioInput.addEventListener("input", updateCounts);
+  }
+});
 </script>
 
 </body>

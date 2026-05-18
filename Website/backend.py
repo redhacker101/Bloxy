@@ -18,6 +18,7 @@ import socket
 import random
 import secrets
 
+
 app = Flask(__name__, template_folder=".", static_folder=".", static_url_path="")
 
 app.secret_key = "change-this-secret-key"
@@ -28,14 +29,14 @@ app.permanent_session_lifetime = timedelta(days=30)
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
-    SESSION_COOKIE_SECURE=False  #True when HTTPS live
+    SESSION_COOKIE_SECURE=True  #True when HTTPS live
 )
 stripe.api_key = "sk_test_51TUgM1PEeETDzLUbe22GNXLu1JKiK3B4vjjJMDCe0z1dQa8jAeB9TyO68wPw40oVv9e4fMOeLfePdTk2kkaLmaTf00cYd47gfn"
 STRIPE_WEBHOOK_SECRET = ""
-BASE_URL = "http://172.104.189.194"
+BASE_URL = "https://bloxygame.com"
 socketio = SocketIO(app, cors_allowed_origins="*")
 GAME_SERVER_TOKEN = os.environ.get("GAME_SERVER_TOKEN", "dev-game-server-token")
-client = MongoClient("mongodb://172.104.189.194:27017/")
+client = MongoClient("mongodb://127.0.0.1:27017/")
 db = client["bloxy"]
 
 GAME_PORT_MIN = 30000
@@ -75,14 +76,80 @@ active_game_players = db["active_game_players"]
 active_game_players.create_index([("game_id", 1), ("username", 1)], unique=True)
 active_game_players.create_index([("last_seen", 1)])
 active_game_players = db["active_game_players"]
-
+game_purchases = db["game_purchases"]
+reward_requests = db["reward_requests"]
+player_reports = db["player_reports"]
+error_reports = db["error_reports"]
+game_player_data = db["game_player_data"]
+leaderboard_scores = db["leaderboard_scores"]
+notifications = db["notifications"]
+game_player_data.create_index([("username", 1), ("game_id", 1), ("key", 1)], unique=True)
+leaderboard_scores.create_index([("game_id", 1), ("board_id", 1), ("username", 1)], unique=True)
+leaderboard_scores.create_index([("game_id", 1), ("board_id", 1), ("score", -1)])
+notifications.create_index([("username", 1), ("acknowledged", 1), ("created_at", -1)])
+game_purchases.create_index([("username", 1), ("created_at", -1)])
+game_purchases.create_index([("game_id", 1), ("created_at", -1)])
+reward_requests.create_index([("username", 1), ("created_at", -1)])
+reward_requests.create_index([("game_id", 1), ("created_at", -1)])
+player_reports.create_index([("game_id", 1), ("created_at", -1)])
+player_reports.create_index([("target_user_id", 1), ("created_at", -1)])
+game_player_data = db["game_player_data"]
+leaderboard_scores = db["leaderboard_scores"]
+notifications = db["notifications"]
+game_sessions = db["game_sessions"]
+server_analytics = db["server_analytics"]
+game_events = db["game_events"]
+game_inventories = db["game_inventories"]
+game_products = db["game_products"]
+cheat_reports = db["cheat_reports"]
+cheat_reports.create_index([("game_id", 1), ("created_at", -1)])
+cheat_reports.create_index([("target_user_id", 1), ("created_at", -1)])
+error_reports.create_index([("game_id", 1), ("created_at", -1)])
 active_game_players.create_index(
     [("game_id", 1), ("server_id", 1), ("peer_id", 1)],
     unique=True
 )
+game_player_data.create_index(
+    [("username", 1), ("game_id", 1), ("key", 1)],
+    unique=True
+)
 
+leaderboard_scores.create_index(
+    [("game_id", 1), ("board_id", 1), ("username", 1)],
+    unique=True
+)
+
+leaderboard_scores.create_index(
+    [("game_id", 1), ("board_id", 1), ("score", -1)]
+)
+
+notifications.create_index(
+    [("username", 1), ("acknowledged", 1), ("created_at", -1)]
+)
+
+game_sessions.create_index(
+    [("game_id", 1), ("username", 1), ("status", 1)]
+)
+
+game_sessions.create_index(
+    [("session_id", 1)],
+    unique=True
+)
+
+server_analytics.create_index(
+    [("game_id", 1), ("server_id", 1), ("created_at", -1)]
+)
+
+game_events.create_index(
+    [("game_id", 1), ("username", 1), ("created_at", -1)]
+)
+
+game_inventories.create_index(
+    [("username", 1), ("game_id", 1), ("item_id", 1)],
+    unique=True
+)
 active_game_players.create_index("last_seen")
-GODOT_HEADLESS_PATH = "./godot-server"
+GODOT_HEADLESS_PATH = "/var/www/bloxy/godot-server"
 GAME_UPLOAD_DIR = "game_uploads"
 GAME_EXTRACT_DIR = "game_builds"
 
@@ -149,7 +216,55 @@ GAME_ICON_DIR = "game_icons"
 ALLOWED_GAME_ICON_EXTENSIONS = {"png", "jpg", "jpeg", "webp"}
 
 os.makedirs(GAME_ICON_DIR, exist_ok=True)
+def get_ticket_user(ticket, game_id):
+    ticket = safe_str(ticket, 200)
+    game_id = safe_str(game_id, 80)
 
+    if not ticket or not game_id:
+        return None, "Missing ticket or game_id"
+
+    ticket_doc = join_tickets.find_one({
+        "ticket": ticket,
+        "game_id": game_id
+    })
+
+    if not ticket_doc:
+        return None, "Invalid ticket"
+
+    expires_at = ticket_doc.get("expires_at")
+
+    if not expires_at or expires_at < datetime.utcnow():
+        return None, "Ticket expired"
+
+    username = ticket_doc.get("username")
+
+    if not valid_username(username):
+        return None, "Invalid ticket username"
+
+    user = users.find_one({"username": username})
+
+    if not user:
+        return None, "User not found"
+
+    if is_banned(username):
+        return None, "User banned"
+
+    return user, None
+
+
+def clean_int(value, default=0, minimum=0, maximum=1000000):
+    try:
+        value = int(value)
+    except Exception:
+        return default
+
+    if value < minimum:
+        return minimum
+
+    if value > maximum:
+        return maximum
+
+    return value
 def cleanup_inactive_game_players():
     cutoff = datetime.utcnow() - timedelta(minutes=2)
 
@@ -366,7 +481,13 @@ def start_game_server(game):
                 "--bloxy-game-id",
                 game_id,
                 "--bloxy-port",
-                str(server_port)
+                str(server_port),
+                "--bloxy-api",
+                BASE_URL,
+                "--bloxy-server-token",
+                GAME_SERVER_TOKEN,
+                "--bloxy-server-id",
+                f"{game_id}_{server_port}"
             ],
             stdout=log_file,
             stderr=log_file,
@@ -375,9 +496,6 @@ def start_game_server(game):
 
         return True, "Server started", proc.pid, server_port
 
-    except Exception as e:
-        log_file.close()
-        return False, str(e), None, None
     except Exception as e:
         log_file.close()
         return False, str(e), None, None
@@ -676,46 +794,6 @@ def require_game_server():
         return False
 
     return True
-def start_game_server(game):
-    server_pck = game.get("server_pck_path")
-    game_id = game.get("game_id", "unknown")
-
-    if not server_pck or not os.path.exists(server_pck):
-        return False, "server.pck not found", None, None
-
-    try:
-        server_port = allocate_game_port()
-    except Exception as e:
-        return False, str(e), None, None
-
-    os.makedirs("game_logs", exist_ok=True)
-
-    log_path = os.path.join("game_logs", f"{game_id}.log")
-    log_file = open(log_path, "a")
-
-    try:
-        proc = subprocess.Popen(
-            [
-                "./godot-server",
-                "--headless",
-                "--main-pack",
-                server_pck,
-                "--",
-                "--bloxy-game-id",
-                game_id,
-                "--bloxy-port",
-                str(server_port)
-            ],
-            stdout=log_file,
-            stderr=log_file,
-            start_new_session=True
-        )
-
-        return True, "Server started", proc.pid, server_port
-
-    except Exception as e:
-        log_file.close()
-        return False, str(e), None, None
 def cleanup_inactive_players():
     cutoff = datetime.utcnow() - timedelta(minutes=2)
 
@@ -1092,8 +1170,13 @@ def login():
             "error": "Invalid login"
         }), 401
 
+    # LOGIN SUCCESS
     login_attempts[ip] = 0
+
+    session.clear()
+    session.permanent = True
     session["user"] = username
+    session.modified = True
 
     users.update_one(
         {"username": username},
@@ -1126,7 +1209,787 @@ def develop():
         blocks=user.get("blocks", 0),
         pfp=user.get("pfp")
     )
+@app.route("/favicon.ico")
+def favicon():
+    return send_from_directory(".", "logo.png", mimetype="image/png")
 
+@app.route("/api/games/<game_id>/player-data/get", methods=["POST"])
+def api_player_data_get(game_id):
+    data = request.get_json(silent=True) or {}
+ 
+    game_id = safe_str(game_id, 80)
+    ticket  = safe_str(data.get("ticket"), 200)
+    key     = safe_str(data.get("key"), 128)
+ 
+    if not game_id or not key:
+        return jsonify({"success": False, "error": "Missing game_id or key"}), 400
+ 
+    user, err = get_ticket_user(ticket, game_id)
+    if err:
+        return jsonify({"success": False, "error": err}), 403
+ 
+    doc = game_player_data.find_one(
+        {"username": user["username"], "game_id": game_id, "key": key},
+        {"_id": 0, "value": 1}
+    )
+ 
+    if not doc:
+        return jsonify({"success": True, "key": key, "value": None})
+ 
+    return jsonify({"success": True, "key": key, "value": doc.get("value")})
+ 
+ 
+@app.route("/api/games/<game_id>/player-data/set", methods=["POST"])
+def api_player_data_set(game_id):
+    data = request.get_json(silent=True) or {}
+ 
+    game_id = safe_str(game_id, 80)
+    ticket  = safe_str(data.get("ticket"), 200)
+    key     = safe_str(data.get("key"), 128)
+    value   = data.get("value")  # any JSON-serialisable type
+ 
+    if not game_id or not key:
+        return jsonify({"success": False, "error": "Missing game_id or key"}), 400
+ 
+    if value is None:
+        return jsonify({"success": False, "error": "Missing value"}), 400
+ 
+    user, err = get_ticket_user(ticket, game_id)
+    if err:
+        return jsonify({"success": False, "error": err}), 403
+ 
+    game_player_data.update_one(
+        {"username": user["username"], "game_id": game_id, "key": key},
+        {
+            "$set": {
+                "value":      value,
+                "updated_at": datetime.utcnow()
+            },
+            "$setOnInsert": {
+                "username":   user["username"],
+                "game_id":    game_id,
+                "key":        key,
+                "created_at": datetime.utcnow()
+            }
+        },
+        upsert=True
+    )
+ 
+    return jsonify({"success": True, "key": key, "value": value})
+ 
+ 
+@app.route("/api/games/<game_id>/player-data/delete", methods=["POST"])
+def api_player_data_delete(game_id):
+    data = request.get_json(silent=True) or {}
+ 
+    game_id = safe_str(game_id, 80)
+    ticket  = safe_str(data.get("ticket"), 200)
+    key     = safe_str(data.get("key"), 128)
+ 
+    if not game_id or not key:
+        return jsonify({"success": False, "error": "Missing game_id or key"}), 400
+ 
+    user, err = get_ticket_user(ticket, game_id)
+    if err:
+        return jsonify({"success": False, "error": err}), 403
+ 
+    game_player_data.delete_one(
+        {"username": user["username"], "game_id": game_id, "key": key}
+    )
+ 
+    return jsonify({"success": True, "key": key})
+ 
+ 
+@app.route("/api/games/<game_id>/player-data/all", methods=["POST"])
+def api_player_data_all(game_id):
+    data = request.get_json(silent=True) or {}
+ 
+    game_id = safe_str(game_id, 80)
+    ticket  = safe_str(data.get("ticket"), 200)
+ 
+    if not game_id:
+        return jsonify({"success": False, "error": "Missing game_id"}), 400
+ 
+    user, err = get_ticket_user(ticket, game_id)
+    if err:
+        return jsonify({"success": False, "error": err}), 403
+ 
+    docs = list(game_player_data.find(
+        {"username": user["username"], "game_id": game_id},
+        {"_id": 0, "key": 1, "value": 1}
+    ))
+ 
+    result = {doc["key"]: doc["value"] for doc in docs}
+ 
+    return jsonify({"success": True, "data": result})
+ 
+
+ 
+@app.route("/api/games/<game_id>/leaderboard/<board_id>")
+def api_leaderboard_fetch(game_id, board_id):
+    game_id  = safe_str(game_id, 80)
+    board_id = safe_str(board_id, 64)
+    limit    = clean_int(request.args.get("limit", 25), default=25, minimum=1, maximum=100)
+ 
+    game = games_collection.find_one({"game_id": game_id, "status": "approved"})
+    if not game:
+        return jsonify({"success": False, "error": "Game not found"}), 404
+ 
+    docs = list(
+        leaderboard_scores.find(
+            {"game_id": game_id, "board_id": board_id},
+            {"_id": 0, "username": 1, "score": 1, "metadata": 1, "updated_at": 1}
+        )
+        .sort("score", -1)
+        .limit(limit)
+    )
+ 
+    entries = []
+    for rank, doc in enumerate(docs, start=1):
+        entries.append({
+            "rank":       rank,
+            "username":   doc.get("username", ""),
+            "score":      doc.get("score", 0),
+            "metadata":   doc.get("metadata", {}),
+            "updated_at": doc.get("updated_at", "").isoformat() if isinstance(doc.get("updated_at"), datetime) else ""
+        })
+ 
+    return jsonify({"success": True, "board_id": board_id, "entries": entries})
+ 
+ 
+@app.route("/api/games/<game_id>/leaderboard/<board_id>/submit", methods=["POST"])
+def api_leaderboard_submit(game_id, board_id):
+    data = request.get_json(silent=True) or {}
+ 
+    game_id  = safe_str(game_id, 80)
+    board_id = safe_str(board_id, 64)
+    ticket   = safe_str(data.get("ticket"), 200)
+    score    = data.get("score", 0)
+    metadata = data.get("metadata", {})
+ 
+    try:
+        score = float(score)
+    except Exception:
+        return jsonify({"success": False, "error": "Invalid score"}), 400
+ 
+    if not isinstance(metadata, dict):
+        metadata = {}
+ 
+    user, err = get_ticket_user(ticket, game_id)
+    if err:
+        return jsonify({"success": False, "error": err}), 403
+ 
+    game = games_collection.find_one({"game_id": game_id, "status": "approved"})
+    if not game:
+        return jsonify({"success": False, "error": "Game not found"}), 404
+ 
+    existing = leaderboard_scores.find_one(
+        {"game_id": game_id, "board_id": board_id, "username": user["username"]}
+    )
+ 
+    if existing and existing.get("score", 0) >= score:
+        return jsonify({
+            "success": True,
+            "updated": False,
+            "message": "Existing score is higher or equal",
+            "score": existing["score"]
+        })
+ 
+    leaderboard_scores.update_one(
+        {"game_id": game_id, "board_id": board_id, "username": user["username"]},
+        {
+            "$set": {
+                "score":      score,
+                "metadata":   metadata,
+                "updated_at": datetime.utcnow()
+            },
+            "$setOnInsert": {
+                "game_id":    game_id,
+                "board_id":   board_id,
+                "username":   user["username"],
+                "created_at": datetime.utcnow()
+            }
+        },
+        upsert=True
+    )
+ 
+    return jsonify({"success": True, "updated": True, "score": score})
+ 
+ 
+@app.route("/api/games/<game_id>/leaderboard/<board_id>/rank")
+def api_leaderboard_rank(game_id, board_id):
+    game_id  = safe_str(game_id, 80)
+    board_id = safe_str(board_id, 64)
+    ticket   = safe_str(request.args.get("ticket", ""), 200)
+ 
+    user, err = get_ticket_user(ticket, game_id)
+    if err:
+        return jsonify({"success": False, "error": err}), 403
+ 
+    my_doc = leaderboard_scores.find_one(
+        {"game_id": game_id, "board_id": board_id, "username": user["username"]},
+        {"_id": 0, "score": 1}
+    )
+ 
+    if not my_doc:
+        return jsonify({"success": True, "rank": -1, "score": 0})
+ 
+    my_score = my_doc["score"]
+ 
+    rank = leaderboard_scores.count_documents({
+        "game_id":  game_id,
+        "board_id": board_id,
+        "score":    {"$gt": my_score}
+    }) + 1
+ 
+    return jsonify({"success": True, "rank": rank, "score": my_score})
+ 
+
+@app.route("/api/users/me/notifications")
+def api_notifications_poll():
+    ticket  = safe_str(request.args.get("ticket", ""), 200)
+    game_id = safe_str(request.args.get("game_id", ""), 80)
+ 
+    user, err = get_ticket_user(ticket, game_id)
+    if err:
+        # Also allow session auth for web clients
+        user = get_current_user()
+        if not user:
+            return jsonify({"success": False, "error": "Not logged in"}), 401
+ 
+    docs = list(
+        notifications.find(
+            {"username": user["username"], "acknowledged": False},
+            {"_id": 1, "title": 1, "body": 1, "data": 1, "created_at": 1}
+        )
+        .sort("created_at", -1)
+        .limit(20)
+    )
+ 
+    result = []
+    for doc in docs:
+        result.append({
+            "id":         str(doc["_id"]),
+            "title":      doc.get("title", ""),
+            "body":       doc.get("body", ""),
+            "data":       doc.get("data", {}),
+            "created_at": doc.get("created_at", "").isoformat() if isinstance(doc.get("created_at"), datetime) else ""
+        })
+ 
+    return jsonify({"success": True, "notifications": result})
+ 
+ 
+@app.route("/api/users/me/notifications/ack", methods=["POST"])
+def api_notifications_ack():
+    data = request.get_json(silent=True) or {}
+ 
+    ticket          = safe_str(data.get("ticket", ""), 200)
+    game_id         = safe_str(data.get("game_id", ""), 80)
+    notification_id = safe_str(data.get("notification_id", ""), 40)
+ 
+    user, err = get_ticket_user(ticket, game_id)
+    if err:
+        user = get_current_user()
+        if not user:
+            return jsonify({"success": False, "error": "Not logged in"}), 401
+ 
+    if not ObjectId.is_valid(notification_id):
+        return jsonify({"success": False, "error": "Invalid notification_id"}), 400
+ 
+    notifications.update_one(
+        {"_id": ObjectId(notification_id), "username": user["username"]},
+        {"$set": {"acknowledged": True, "acknowledged_at": datetime.utcnow()}}
+    )
+ 
+    return jsonify({"success": True})
+ 
+ 
+@app.route("/api/admin/notifications/send", methods=["POST"])
+def api_admin_send_notification():
+    admin, response = require_admin()
+    if response:
+        return jsonify({"success": False, "error": "Forbidden"}), 403
+ 
+    data     = request.get_json(silent=True) or {}
+    username = safe_str(data.get("username"), 20)
+    title    = safe_str(data.get("title"), 120)
+    body     = safe_str(data.get("body"), 500)
+    notif_data = data.get("data", {})
+ 
+    if not valid_username(username) or not title or not body:
+        return jsonify({"success": False, "error": "Missing username, title, or body"}), 400
+ 
+    if not isinstance(notif_data, dict):
+        notif_data = {}
+ 
+    notifications.insert_one({
+        "username":     username,
+        "title":        title,
+        "body":         body,
+        "data":         notif_data,
+        "acknowledged": False,
+        "created_at":   datetime.utcnow()
+    })
+ 
+    return jsonify({"success": True})
+ 
+ 
+ 
+@app.route("/api/reports/cheat", methods=["POST"])
+def api_report_cheat():
+    if not require_game_server():
+        return jsonify({"success": False, "error": "Invalid game server token"}), 403
+ 
+    data            = request.get_json(silent=True) or {}
+    game_id         = safe_str(data.get("game_id"), 80)
+    server_id       = safe_str(data.get("server_id"), 120)
+    target_user_id  = safe_str(data.get("target_user_id"), 80)
+    violation       = safe_str(data.get("violation"), 128)
+    details         = data.get("details", {})
+ 
+    if not game_id or not target_user_id or not violation:
+        return jsonify({"success": False, "error": "Missing game_id, target_user_id, or violation"}), 400
+ 
+    if not isinstance(details, dict):
+        details = {}
+ 
+    cheat_reports.insert_one({
+        "game_id":        game_id,
+        "server_id":      server_id,
+        "target_user_id": target_user_id,
+        "violation":      violation,
+        "details":        details,
+        "status":         "open",
+        "created_at":     datetime.utcnow()
+    })
+ 
+    game = games_collection.find_one({"game_id": game_id}, {"_id": 0, "title": 1})
+    game_title = game.get("title", "Unknown Game") if game else "Unknown Game"
+ 
+    support_tickets.insert_one({
+        "username":         "system",
+        "category":         "Cheat report (anticheat)",
+        "subject":          f"Anticheat violation in {game_title}",
+        "message": (
+            f"Game ID: {game_id}\n"
+            f"Server ID: {server_id}\n"
+            f"Target User ID: {target_user_id}\n"
+            f"Violation: {violation}\n"
+            f"Details: {details}"
+        ),
+        "status":           "open",
+        "created_at":       now_iso(),
+        "admin_reply":      None,
+        "admin_replied_at": None,
+        "source":           "anticheat"
+    })
+ 
+    return jsonify({"success": True, "message": "Cheat report submitted"})
+ 
+ 
+ 
+@app.route("/api/game-server/analytics", methods=["POST"])
+def api_game_server_analytics():
+    if not require_game_server():
+        return jsonify({"success": False, "error": "Invalid game server token"}), 403
+ 
+    data      = request.get_json(silent=True) or {}
+    game_id   = safe_str(data.get("game_id"), 80)
+    server_id = safe_str(data.get("server_id"), 120)
+ 
+    if not game_id or not server_id:
+        return jsonify({"success": False, "error": "Missing game_id or server_id"}), 400
+ 
+    doc = {
+        "game_id":      game_id,
+        "server_id":    server_id,
+        "peer_count":   clean_int(data.get("peer_count"), default=0, minimum=0, maximum=10000),
+        "uptime":       clean_int(data.get("uptime"), default=0, minimum=0, maximum=99999999),
+        "static_mem":   data.get("static_mem", 0),
+        "sdk_version":  safe_str(data.get("sdk_version"), 20),
+        "created_at":   datetime.utcnow()
+    }
+ 
+    # Copy any extra keys the SDK sends
+    reserved = {"game_id", "server_id", "peer_count", "uptime", "static_mem", "sdk_version"}
+    for k, v in data.items():
+        if k not in reserved:
+            doc[safe_str(k, 64)] = v
+ 
+    server_analytics.insert_one(doc)
+ 
+    # Keep the games collection up to date
+    games_collection.update_one(
+        {"game_id": game_id},
+        {"$set": {"last_analytics_at": datetime.utcnow(), "players": doc["peer_count"]}}
+    )
+ 
+    return jsonify({"success": True})
+ 
+ 
+ 
+@app.route("/api/users/me/spend-blocks", methods=["POST"])
+def api_spend_blocks():
+    data   = request.get_json(silent=True) or {}
+    ticket = safe_str(data.get("ticket"), 200)
+    # game_id is required to validate the ticket
+    game_id = safe_str(data.get("game_id", ""), 80)
+    amount = clean_int(data.get("amount"), default=0, minimum=1, maximum=1000000)
+    reason = safe_str(data.get("reason"), 250)
+ 
+    if not reason:
+        return jsonify({"success": False, "error": "Missing reason"}), 400
+ 
+    user, err = get_ticket_user(ticket, game_id)
+    if err:
+        return jsonify({"success": False, "error": err}), 403
+ 
+    current_blocks = int(user.get("blocks", 0))
+ 
+    if current_blocks < amount:
+        return jsonify({
+            "success": False,
+            "error":   "Not enough Blocks",
+            "blocks":  current_blocks
+        }), 400
+ 
+    result = users.update_one(
+        {"username": user["username"], "blocks": {"$gte": amount}},
+        {"$inc": {"blocks": -amount}}
+    )
+ 
+    if result.modified_count != 1:
+        fresh = users.find_one({"username": user["username"]})
+        return jsonify({
+            "success": False,
+            "error":   "Spend failed",
+            "blocks":  int(fresh.get("blocks", 0)) if fresh else 0
+        }), 400
+ 
+    block_transactions.insert_one({
+        "username":   user["username"],
+        "type":       "spend",
+        "amount":     -amount,
+        "game_id":    game_id,
+        "reason":     reason,
+        "created_at": datetime.utcnow()
+    })
+ 
+    fresh = users.find_one({"username": user["username"]})
+    new_blocks = int(fresh.get("blocks", 0)) if fresh else 0
+ 
+    return jsonify({"success": True, "blocks": new_blocks, "spent": amount})
+ 
+
+ 
+@app.route("/api/game-server/grant-blocks", methods=["POST"])
+def api_server_grant_blocks():
+    if not require_game_server():
+        return jsonify({"success": False, "error": "Invalid game server token"}), 403
+ 
+    data            = request.get_json(silent=True) or {}
+    game_id         = safe_str(data.get("game_id"), 80)
+    server_id       = safe_str(data.get("server_id"), 120)
+    target_user_id  = safe_str(data.get("target_user_id"), 80)
+    amount          = clean_int(data.get("amount"), default=0, minimum=1, maximum=100000)
+    reason          = safe_str(data.get("reason"), 250)
+ 
+    if not game_id or not target_user_id or not reason:
+        return jsonify({"success": False, "error": "Missing game_id, target_user_id, or reason"}), 400
+ 
+    # Look up user by user_id (ObjectId string) or username
+    target_user = None
+    if ObjectId.is_valid(target_user_id):
+        target_user = users.find_one({"_id": ObjectId(target_user_id)})
+ 
+    if not target_user:
+        target_user = users.find_one({"username": target_user_id})
+ 
+    if not target_user:
+        return jsonify({"success": False, "error": "User not found"}), 404
+ 
+    if is_banned(target_user["username"]):
+        return jsonify({"success": False, "error": "User is banned"}), 403
+ 
+    users.update_one(
+        {"username": target_user["username"]},
+        {"$inc": {"blocks": amount}}
+    )
+ 
+    block_transactions.insert_one({
+        "username":   target_user["username"],
+        "type":       "server_grant",
+        "amount":     amount,
+        "game_id":    game_id,
+        "server_id":  server_id,
+        "reason":     reason,
+        "created_at": datetime.utcnow()
+    })
+ 
+    fresh = users.find_one({"username": target_user["username"]})
+    new_blocks = int(fresh.get("blocks", 0)) if fresh else 0
+ 
+    return jsonify({
+        "success":    True,
+        "username":   target_user["username"],
+        "granted":    amount,
+        "blocks":     new_blocks
+    })
+ 
+
+ 
+@app.route("/api/games/<game_id>/owns/<item_id>")
+def api_check_ownership(game_id, board_id=None, item_id=None):
+    # Route: /api/games/<game_id>/owns/<item_id>?ticket=...
+    game_id = safe_str(game_id, 80)
+    item_id = safe_str(item_id, 120)
+    ticket  = safe_str(request.args.get("ticket", ""), 200)
+ 
+    user, err = get_ticket_user(ticket, game_id)
+    if err:
+        return jsonify({"success": False, "error": err}), 403
+ 
+    purchase = game_purchases.find_one({
+        "username": user["username"],
+        "game_id":  game_id,
+        "item_id":  item_id
+    })
+ 
+    return jsonify({
+        "success": True,
+        "owns":    purchase is not None,
+        "item_id": item_id
+    })
+ 
+ 
+@app.route("/api/users/me/inventory", methods=["POST"])
+def api_user_inventory():
+    data    = request.get_json(silent=True) or {}
+    ticket  = safe_str(data.get("ticket"), 200)
+    game_id = safe_str(data.get("game_id", ""), 80)
+ 
+    user, err = get_ticket_user(ticket, game_id)
+    if err:
+        return jsonify({"success": False, "error": err}), 403
+ 
+    query = {"username": user["username"]}
+    if game_id:
+        query["game_id"] = game_id
+ 
+    docs = list(game_purchases.find(
+        query,
+        {"_id": 0, "item_id": 1, "product_id": 1, "game_id": 1, "price": 1, "created_at": 1}
+    ).sort("created_at", -1).limit(500))
+ 
+    items = []
+    for doc in docs:
+        created = doc.get("created_at")
+        items.append({
+            "item_id":    doc.get("item_id", doc.get("product_id", "")),
+            "game_id":    doc.get("game_id", ""),
+            "price":      doc.get("price", 0),
+            "created_at": created.isoformat() if isinstance(created, datetime) else ""
+        })
+ 
+    return jsonify({"success": True, "items": items})
+ 
+ 
+@app.route("/api/games/<game_id>/inventory")
+def api_game_inventory(game_id):
+    game_id = safe_str(game_id, 80)
+    ticket = safe_str(request.args.get("ticket", ""), 200)
+
+    user, err = get_ticket_user(ticket, game_id)
+
+    if err:
+        return jsonify({
+            "success": False,
+            "error": err
+        }), 403
+
+    docs = list(
+        game_purchases.find(
+            {
+                "username": user["username"],
+                "game_id": game_id
+            },
+            {
+                "_id": 0,
+                "item_id": 1,
+                "product_id": 1,
+                "game_id": 1,
+                "price": 1,
+                "created_at": 1
+            }
+        )
+        .sort("created_at", -1)
+        .limit(500)
+    )
+
+    items = []
+
+    for doc in docs:
+        created = doc.get("created_at")
+
+        items.append({
+            "item_id": doc.get("item_id", doc.get("product_id", "")),
+            "product_id": doc.get("product_id", ""),
+            "game_id": doc.get("game_id", ""),
+            "price": doc.get("price", 0),
+            "created_at": created.isoformat() if isinstance(created, datetime) else ""
+        })
+
+    return jsonify({
+        "success": True,
+        "items": items
+    })
+    
+@app.route("/api/games/<game_id>/session/ping", methods=["POST"])
+def api_game_session_ping(game_id):
+    data = request.get_json(silent=True) or {}
+
+    game_id = safe_str(game_id, 80)
+    ticket = safe_str(data.get("ticket"), 200)
+    duration = clean_int(
+        data.get("duration"),
+        default=0,
+        minimum=0,
+        maximum=99999999
+    )
+
+    user, err = get_ticket_user(ticket, game_id)
+
+    if err:
+        return jsonify({
+            "success": False,
+            "error": err
+        }), 403
+
+    active_session = game_sessions.find_one(
+        {
+            "game_id": game_id,
+            "username": user["username"],
+            "status": "active"
+        },
+        sort=[("started_at", -1)]
+    )
+
+    if active_session:
+        game_sessions.update_one(
+            {"_id": active_session["_id"]},
+            {
+                "$set": {
+                    "last_ping_at": datetime.utcnow(),
+                    "duration_seconds": duration
+                }
+            }
+        )
+
+        return jsonify({
+            "success": True,
+            "duration": duration,
+            "session_id": active_session.get("session_id")
+        })
+
+    session_id = str(uuid.uuid4())
+
+    game_sessions.insert_one({
+        "session_id": session_id,
+        "game_id": game_id,
+        "username": user["username"],
+        "user_id": str(user.get("_id", "")),
+        "sdk_version": "",
+        "started_at": datetime.utcnow(),
+        "last_ping_at": datetime.utcnow(),
+        "ended_at": None,
+        "duration_seconds": duration,
+        "status": "active"
+    })
+
+    return jsonify({
+        "success": True,
+        "duration": duration,
+        "session_id": session_id,
+        "created_session": True
+    }) 
+
+@app.route("/api/games/<game_id>/events-batch", methods=["POST"])
+def api_game_events_batch(game_id):
+    data    = request.get_json(silent=True) or {}
+    game_id = safe_str(game_id, 80)
+    ticket  = safe_str(data.get("ticket"), 200)
+    events  = data.get("events", [])
+ 
+    if not game_id:
+        return jsonify({"success": False, "error": "Missing game_id"}), 400
+ 
+    if not isinstance(events, list) or len(events) == 0:
+        return jsonify({"success": False, "error": "No events provided"}), 400
+ 
+    if len(events) > 50:
+        return jsonify({"success": False, "error": "Max 50 events per batch"}), 400
+ 
+    user, err = get_ticket_user(ticket, game_id)
+    if err:
+        return jsonify({"success": False, "error": err}), 403
+ 
+    game = games_collection.find_one({"game_id": game_id, "status": "approved"})
+    if not game:
+        return jsonify({"success": False, "error": "Game not found"}), 404
+ 
+    docs = []
+    now  = datetime.utcnow()
+ 
+    for ev in events:
+        if not isinstance(ev, dict):
+            continue
+ 
+        event_name = safe_str(ev.get("event", ""), 120)
+        if not event_name:
+            continue
+ 
+        event_data = ev.get("data", {})
+        if not isinstance(event_data, dict):
+            event_data = {}
+ 
+        docs.append({
+            "game_id":    game_id,
+            "username":   user["username"],
+            "user_id":    str(user.get("_id", "")),
+            "event":      event_name,
+            "data":       event_data,
+            "created_at": now
+        })
+ 
+    if docs:
+        game_events.insert_many(docs)
+ 
+    return jsonify({"success": True, "logged": len(docs)})
+ 
+ 
+
+ 
+@app.route("/api/users/me/blocks", methods=["GET", "POST"])
+def api_user_blocks():
+    user = get_current_user()
+
+    if not user:
+        data = request.get_json(silent=True) or {}
+        ticket = safe_str(data.get("ticket"), 200)
+        game_id = safe_str(data.get("game_id"), 80)
+
+        user, err = get_ticket_user(ticket, game_id)
+
+        if err:
+            return jsonify({
+                "success": False,
+                "error": err
+            }), 401
+
+    return jsonify({
+        "success": True,
+        "blocks": int(user.get("blocks", 0))
+    })
 @app.route("/home")
 def home():
     user = get_current_user()
@@ -1558,7 +2421,7 @@ def game_player_join(game_id):
     if not ticket_doc:
         return jsonify({
             "success": False,
-            "error": "Invalid Bloxy ticket"
+            "error": "Invalid bloxy ticket"
         }), 403
 
     expires_at = ticket_doc.get("expires_at")
@@ -1572,32 +2435,45 @@ def game_player_join(game_id):
     username = user["username"]
     now_dt = datetime.utcnow()
 
-    active_game_players.update_one(
-        {
-            "game_id": game_id,
-            "username": username
-        },
-        {
-            "$set": {
+    server_id = "launcher_prejoin"
+    peer_id = username
+
+    try:
+        active_game_players.update_one(
+            {
                 "game_id": game_id,
-                "username": username,
-                "last_seen": now_dt
+                "server_id": server_id,
+                "peer_id": peer_id
             },
-            "$setOnInsert": {
-                "joined_at": now_dt
-            }
-        },
-        upsert=True
-    )
+            {
+                "$set": {
+                    "game_id": game_id,
+                    "server_id": server_id,
+                    "peer_id": peer_id,
+                    "username": username,
+                    "last_seen": now_dt
+                },
+                "$setOnInsert": {
+                    "joined_at": now_dt
+                }
+            },
+            upsert=True
+        )
 
-    count = update_game_player_count(game_id)
+        count = update_game_player_count(game_id)
 
-    return jsonify({
-        "success": True,
-        "game_id": game_id,
-        "username": username,
-        "players": count
-    })
+        return jsonify({
+            "success": True,
+            "game_id": game_id,
+            "username": username,
+            "players": count
+        })
+
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
 @app.route("/api/games/<game_id>/play")
 def game_play_info(game_id):
     user = get_current_user()
@@ -1637,6 +2513,9 @@ def game_play_info(game_id):
 
     join_ticket = create_join_ticket(user["username"], game["game_id"])
 
+    username = user["username"]
+    user_id = str(user.get("_id", ""))
+
     if not game.get("multiplayer"):
         return jsonify({
             "success": True,
@@ -1644,7 +2523,12 @@ def game_play_info(game_id):
             "title": game.get("title", ""),
             "multiplayer": False,
             "client_pck_url": f"/api/games/{game_id}/client.pck",
-            "join_ticket": join_ticket
+            "join_ticket": join_ticket,
+            "username": username,
+            "user_id": user_id,
+            "server_ip": "",
+            "server_port": 0,
+            "server_pid": None
         })
 
     server_running = game.get("server_running", False)
@@ -1710,12 +2594,12 @@ def game_play_info(game_id):
         "title": game.get("title", ""),
         "multiplayer": True,
         "client_pck_url": f"/api/games/{game_id}/client.pck",
-
-        "server_ip": "127.0.0.1",
-
+        "server_ip": "172.104.189.194",
         "server_port": server_port,
         "server_pid": server_pid,
-        "join_ticket": join_ticket
+        "join_ticket": join_ticket,
+        "username": username,
+        "user_id": user_id
     })
 @app.route("/api/game-server/verify-ticket", methods=["POST"])
 def verify_join_ticket():
@@ -1939,6 +2823,383 @@ def game_server_heartbeat():
     return jsonify({
         "success": True,
         "players": count
+    })
+
+@app.route("/api/games/<game_id>/purchase", methods=["POST"])
+def api_game_purchase(game_id):
+    data = request.get_json(silent=True) or {}
+
+    game_id = safe_str(game_id, 80)
+    ticket = safe_str(data.get("ticket"), 200)
+    item_id = safe_str(data.get("item_id"), 120)
+    price = clean_int(data.get("price"), default=0, minimum=1, maximum=1000000)
+
+    if not game_id or not item_id:
+        return jsonify({
+            "success": False,
+            "error": "Missing game_id or item_id"
+        }), 400
+
+    user, err = get_ticket_user(ticket, game_id)
+
+    if err:
+        return jsonify({
+            "success": False,
+            "error": err
+        }), 403
+
+    game = games_collection.find_one({
+        "game_id": game_id,
+        "status": "approved"
+    })
+
+    if not game:
+        return jsonify({
+            "success": False,
+            "error": "Game not found or not approved"
+        }), 404
+
+    current_blocks = int(user.get("blocks", 0))
+
+    if current_blocks < price:
+        return jsonify({
+            "success": False,
+            "error": "Not enough Blocks",
+            "blocks": current_blocks
+        }), 400
+
+    result = users.update_one(
+        {
+            "username": user["username"],
+            "blocks": {"$gte": price}
+        },
+        {
+            "$inc": {
+                "blocks": -price
+            }
+        }
+    )
+
+    if result.modified_count != 1:
+        fresh_user = users.find_one({"username": user["username"]})
+        return jsonify({
+            "success": False,
+            "error": "Purchase failed",
+            "blocks": int(fresh_user.get("blocks", 0)) if fresh_user else 0
+        }), 400
+
+    purchase_doc = {
+        "username": user["username"],
+        "user_id": str(user.get("_id", "")),
+        "game_id": game_id,
+        "item_id": item_id,
+        "price": price,
+        "created_at": datetime.utcnow()
+    }
+
+    game_purchases.insert_one(purchase_doc)
+
+    block_transactions.insert_one({
+        "username": user["username"],
+        "type": "game_purchase",
+        "amount": -price,
+        "game_id": game_id,
+        "item_id": item_id,
+        "created_at": datetime.utcnow()
+    })
+
+    fresh_user = users.find_one({"username": user["username"]})
+    new_blocks = int(fresh_user.get("blocks", 0)) if fresh_user else 0
+
+    return jsonify({
+        "success": True,
+        "username": user["username"],
+        "game_id": game_id,
+        "item_id": item_id,
+        "price": price,
+        "blocks": new_blocks
+    })
+@app.route("/api/games/<game_id>/purchase-product", methods=["POST"])
+def api_game_purchase_product(game_id):
+    data = request.get_json(silent=True) or {}
+
+    game_id = safe_str(game_id, 80)
+    ticket = safe_str(data.get("ticket"), 200)
+    product_id = safe_str(data.get("product_id"), 120)
+
+    if not game_id or not product_id:
+        return jsonify({
+            "success": False,
+            "error": "Missing game_id or product_id"
+        }), 400
+
+    user, err = get_ticket_user(ticket, game_id)
+
+    if err:
+        return jsonify({
+            "success": False,
+            "error": err
+        }), 403
+
+    product = game_products.find_one({
+        "game_id": game_id,
+        "product_id": product_id,
+        "active": True
+    })
+
+    if not product:
+        return jsonify({
+            "success": False,
+            "error": "Product not found"
+        }), 404
+
+    price = int(product.get("price", 0))
+
+    if price <= 0:
+        return jsonify({
+            "success": False,
+            "error": "Invalid product price"
+        }), 400
+
+    current_blocks = int(user.get("blocks", 0))
+
+    if current_blocks < price:
+        return jsonify({
+            "success": False,
+            "error": "Not enough Blocks",
+            "blocks": current_blocks
+        }), 400
+
+    result = users.update_one(
+        {
+            "username": user["username"],
+            "blocks": {"$gte": price}
+        },
+        {
+            "$inc": {
+                "blocks": -price
+            }
+        }
+    )
+
+    if result.modified_count != 1:
+        fresh_user = users.find_one({"username": user["username"]})
+        return jsonify({
+            "success": False,
+            "error": "Purchase failed",
+            "blocks": int(fresh_user.get("blocks", 0)) if fresh_user else 0
+        }), 400
+
+    game_purchases.insert_one({
+        "username": user["username"],
+        "user_id": str(user.get("_id", "")),
+        "game_id": game_id,
+        "product_id": product_id,
+        "price": price,
+        "created_at": datetime.utcnow()
+    })
+
+    block_transactions.insert_one({
+        "username": user["username"],
+        "type": "game_product_purchase",
+        "amount": -price,
+        "game_id": game_id,
+        "product_id": product_id,
+        "created_at": datetime.utcnow()
+    })
+
+    fresh_user = users.find_one({"username": user["username"]})
+    new_blocks = int(fresh_user.get("blocks", 0)) if fresh_user else 0
+
+    return jsonify({
+        "success": True,
+        "username": user["username"],
+        "game_id": game_id,
+        "product_id": product_id,
+        "price": price,
+        "blocks": new_blocks
+    })
+@app.route("/api/games/<game_id>/reward-request", methods=["POST"])
+def api_game_reward_request(game_id):
+    data = request.get_json(silent=True) or {}
+
+    game_id = safe_str(game_id, 80)
+    ticket = safe_str(data.get("ticket"), 200)
+    reason = safe_str(data.get("reason"), 250)
+    amount = clean_int(data.get("amount"), default=0, minimum=1, maximum=10000)
+
+    if not game_id or not reason:
+        return jsonify({
+            "success": False,
+            "error": "Missing game_id or reason"
+        }), 400
+
+    user, err = get_ticket_user(ticket, game_id)
+
+    if err:
+        return jsonify({
+            "success": False,
+            "error": err
+        }), 403
+
+    game = games_collection.find_one({
+        "game_id": game_id,
+        "status": "approved"
+    })
+
+    if not game:
+        return jsonify({
+            "success": False,
+            "error": "Game not found or not approved"
+        }), 404
+
+    reward_doc = {
+        "username": user["username"],
+        "user_id": str(user.get("_id", "")),
+        "game_id": game_id,
+        "reason": reason,
+        "amount": amount,
+        "status": "pending",
+        "created_at": datetime.utcnow()
+    }
+
+    reward_requests.insert_one(reward_doc)
+
+    return jsonify({
+        "success": True,
+        "message": "Reward request submitted",
+        "status": "pending"
+    })
+@app.route("/api/reports/player", methods=["POST"])
+def api_report_player():
+    data = request.get_json(silent=True) or {}
+
+    game_id = safe_str(data.get("game_id"), 80)
+    ticket = safe_str(data.get("ticket"), 200)
+    reporter_user_id = safe_str(data.get("reporter_user_id"), 80)
+    target_user_id = safe_str(data.get("target_user_id"), 80)
+    reason = safe_str(data.get("reason"), 500)
+
+    if not game_id or not target_user_id or not reason:
+        return jsonify({
+            "success": False,
+            "error": "Missing game_id, target_user_id, or reason"
+        }), 400
+
+    user, err = get_ticket_user(ticket, game_id)
+
+    if err:
+        return jsonify({
+            "success": False,
+            "error": err
+        }), 403
+
+    game = games_collection.find_one(
+        {"game_id": game_id},
+        {"_id": 0, "title": 1}
+    )
+
+    game_title = game.get("title", "Unknown Game") if game else "Unknown Game"
+
+    ticket_doc = {
+        "username": user["username"],
+        "category": "In-game player report",
+        "subject": f"Player report in {game_title}",
+        "message": (
+            f"Reporter: {user['username']}\n"
+            f"Reporter User ID: {reporter_user_id or str(user.get('_id', ''))}\n"
+            f"Target User ID: {target_user_id}\n"
+            f"Game ID: {game_id}\n"
+            f"Game Title: {game_title}\n\n"
+            f"Reason:\n{reason}"
+        ),
+        "status": "open",
+        "created_at": now_iso(),
+        "admin_reply": "",
+        "admin_replied_at": None,
+        "source": "game_sdk"
+    }
+
+    support_tickets.insert_one(ticket_doc)
+
+    if "player_reports" in globals():
+        player_reports.insert_one({
+            "game_id": game_id,
+            "reporter_username": user["username"],
+            "reporter_user_id": reporter_user_id or str(user.get("_id", "")),
+            "target_user_id": target_user_id,
+            "reason": reason,
+            "status": "open",
+            "created_at": datetime.utcnow()
+        })
+
+    return jsonify({
+        "success": True,
+        "message": "Report submitted"
+    })
+@app.route("/api/reports/error", methods=["POST"])
+def api_report_error():
+    data = request.get_json(silent=True) or {}
+
+    game_id = safe_str(data.get("game_id"), 80)
+    ticket = safe_str(data.get("ticket"), 200)
+    username = safe_str(data.get("username"), 20)
+    user_id = safe_str(data.get("user_id"), 80)
+    message = safe_str(data.get("message"), 2000)
+
+    if not game_id or not message:
+        return jsonify({
+            "success": False,
+            "error": "Missing game_id or message"
+        }), 400
+
+    user, err = get_ticket_user(ticket, game_id)
+
+    if err:
+        return jsonify({
+            "success": False,
+            "error": err
+        }), 403
+
+    game = games_collection.find_one(
+        {"game_id": game_id},
+        {"_id": 0, "title": 1}
+    )
+
+    game_title = game.get("title", "Unknown Game") if game else "Unknown Game"
+
+    ticket_doc = {
+        "username": user["username"],
+        "category": "Game error report",
+        "subject": f"Game error in {game_title}",
+        "message": (
+            f"Username: {username or user['username']}\n"
+            f"User ID: {user_id or str(user.get('_id', ''))}\n"
+            f"Game ID: {game_id}\n"
+            f"Game Title: {game_title}\n\n"
+            f"Error:\n{message}"
+        ),
+        "status": "open",
+        "created_at": now_iso(),
+        "admin_reply": "",
+        "admin_replied_at": None,
+        "source": "game_sdk"
+    }
+
+    support_tickets.insert_one(ticket_doc)
+
+    if "error_reports" in globals():
+        error_reports.insert_one({
+            "game_id": game_id,
+            "username": username or user["username"],
+            "user_id": user_id or str(user.get("_id", "")),
+            "message": message,
+            "created_at": datetime.utcnow()
+        })
+
+    return jsonify({
+        "success": True,
+        "message": "Error report submitted"
     })
 @app.route("/chat")
 def chat_page():
@@ -3108,6 +4369,165 @@ def blocks_success():
         username=user["username"],
         blocks=updated_user.get("blocks", 0)
     )
+@app.route("/api/games/<game_id>/event", methods=["POST"])
+def api_game_event(game_id):
+    data = request.get_json(silent=True) or {}
+
+    game_id = safe_str(game_id, 80)
+    ticket = safe_str(data.get("ticket"), 200)
+    event_name = safe_str(data.get("event"), 120)
+    event_data = data.get("data", {})
+
+    if not game_id or not event_name:
+        return jsonify({
+            "success": False,
+            "error": "Missing game_id or event"
+        }), 400
+
+    if not isinstance(event_data, dict):
+        event_data = {}
+
+    user, err = get_ticket_user(ticket, game_id)
+
+    if err:
+        return jsonify({
+            "success": False,
+            "error": err
+        }), 403
+
+    game_events.insert_one({
+        "game_id": game_id,
+        "username": user["username"],
+        "user_id": str(user.get("_id", "")),
+        "event": event_name,
+        "data": event_data,
+        "created_at": datetime.utcnow()
+    })
+
+    return jsonify({
+        "success": True,
+        "message": "Event logged"
+    })  
+
+game_sessions = db["game_sessions"]
+
+game_sessions.create_index([("game_id", 1), ("username", 1), ("status", 1)])
+game_sessions.create_index([("session_id", 1)], unique=True)
+game_sessions.create_index([("started_at", -1)])
+
+
+@app.route("/api/games/<game_id>/session/start", methods=["POST"])
+def api_game_session_start(game_id):
+    data = request.get_json(silent=True) or {}
+
+    game_id = safe_str(game_id, 80)
+    ticket = safe_str(data.get("ticket"), 200)
+    sdk_version = safe_str(data.get("sdk_version"), 30)
+
+    user, err = get_ticket_user(ticket, game_id)
+
+    if err:
+        return jsonify({
+            "success": False,
+            "error": err
+        }), 403
+
+    # End any old active session for this user/game first
+    game_sessions.update_many(
+        {
+            "game_id": game_id,
+            "username": user["username"],
+            "status": "active"
+        },
+        {
+            "$set": {
+                "ended_at": datetime.utcnow(),
+                "status": "ended_stale"
+            }
+        }
+    )
+
+    session_id = str(uuid.uuid4())
+
+    game_sessions.insert_one({
+        "session_id": session_id,
+        "game_id": game_id,
+        "username": user["username"],
+        "user_id": str(user.get("_id", "")),
+        "sdk_version": sdk_version,
+        "started_at": datetime.utcnow(),
+        "last_ping_at": datetime.utcnow(),
+        "ended_at": None,
+        "duration_seconds": 0,
+        "status": "active"
+    })
+
+    return jsonify({
+        "success": True,
+        "session_id": session_id
+    })
+
+
+@app.route("/api/games/<game_id>/session/end", methods=["POST"])
+def api_game_session_end(game_id):
+    data = request.get_json(silent=True) or {}
+
+    game_id = safe_str(game_id, 80)
+    ticket = safe_str(data.get("ticket"), 200)
+    client_duration = clean_int(
+        data.get("duration"),
+        default=0,
+        minimum=0,
+        maximum=99999999
+    )
+
+    user, err = get_ticket_user(ticket, game_id)
+
+    if err:
+        return jsonify({
+            "success": False,
+            "error": err
+        }), 403
+
+    active_session = game_sessions.find_one(
+        {
+            "game_id": game_id,
+            "username": user["username"],
+            "status": "active"
+        },
+        sort=[("started_at", -1)]
+    )
+
+    if not active_session:
+        return jsonify({
+            "success": False,
+            "error": "No active session found"
+        }), 404
+
+    ended_at = datetime.utcnow()
+    started_at = active_session.get("started_at")
+
+    duration_seconds = client_duration
+
+    if isinstance(started_at, datetime):
+        duration_seconds = int((ended_at - started_at).total_seconds())
+
+    game_sessions.update_one(
+        {"_id": active_session["_id"]},
+        {
+            "$set": {
+                "ended_at": ended_at,
+                "last_ping_at": ended_at,
+                "duration_seconds": duration_seconds,
+                "status": "ended"
+            }
+        }
+    )
+
+    return jsonify({
+        "success": True,
+        "duration_seconds": duration_seconds
+    })
 
 @app.route("/blocks/cancel")
 def blocks_cancel():
@@ -3273,30 +4693,42 @@ def settings_page():
     if not user:
         return redirect("/login")
 
-    privacy = user.get("privacy", {
+    default_privacy = {
         "friend_requests": "everyone",
         "messages": "friends",
         "show_online": True
-    })
+    }
+
+    privacy = user.get("privacy")
 
     if not isinstance(privacy, dict):
+        privacy = default_privacy.copy()
+    else:
         privacy = {
-            "friend_requests": "everyone",
-            "messages": "friends",
-            "show_online": True
+            "friend_requests": privacy.get("friend_requests", "everyone"),
+            "messages": privacy.get("messages", "friends"),
+            "show_online": privacy.get("show_online", True)
         }
+
+    bio = user.get("bio", "")
+    status = user.get("status", "")
+
+    if not isinstance(bio, str):
+        bio = ""
+
+    if not isinstance(status, str):
+        status = ""
 
     return render_template(
         "settings.html",
-        username=user["username"],
-        blocks=user.get("blocks", 0),
+        username=user.get("username", ""),
+        blocks=int(user.get("blocks", 0)),
         pfp=user.get("pfp"),
         privacy=privacy,
-        bio=user.get("bio", ""),
-        status=user.get("status", ""),
+        bio=bio,
+        status=status,
         is_admin=is_admin_user(user)
     )
-
 @app.route("/api/settings/change-password", methods=["POST"])
 def change_password():
     user = get_current_user()
@@ -3365,14 +4797,8 @@ def update_profile_settings():
 
     data = request.get_json(silent=True) or {}
 
-    bio = safe_str(data.get("bio"), 300)
-    status = safe_str(data.get("status"), 80)
-
-    if is_bad_text(bio):
-        return jsonify({
-            "success": False,
-            "error": "Bio contains blocked text"
-        }), 400
+    status = safe_str(data.get("status", ""), 80)
+    bio = safe_str(data.get("bio", ""), 300)
 
     if is_bad_text(status):
         return jsonify({
@@ -3380,22 +4806,34 @@ def update_profile_settings():
             "error": "Status contains blocked text"
         }), 400
 
-    users.update_one(
+    if is_bad_text(bio):
+        return jsonify({
+            "success": False,
+            "error": "Bio contains blocked text"
+        }), 400
+
+    result = users.update_one(
         {"username": user["username"]},
         {
             "$set": {
-                "bio": bio,
                 "status": status,
+                "bio": bio,
                 "profile_updated_at": datetime.utcnow(),
                 "last_online": datetime.utcnow()
             }
         }
     )
 
-    return jsonify({
-        "success": True
-    })
+    fresh_user = users.find_one(
+        {"username": user["username"]},
+        {"_id": 0, "username": 1, "status": 1, "bio": 1}
+    )
 
+    return jsonify({
+        "success": True,
+        "status": fresh_user.get("status", ""),
+        "bio": fresh_user.get("bio", "")
+    })
 @app.route("/api/settings/privacy", methods=["POST"])
 def update_privacy_settings():
     user = get_current_user()

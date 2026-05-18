@@ -59,7 +59,7 @@
     <div class="profile-left">
       <img
         class="profile-big-pfp"
-        src="/pfp/user/{{ profile.username }}"
+        src="/pfp/user/{{ profile.username }}?t={{ profile.username }}"
         onerror="this.src='/logo.png'"
         alt="{{ profile.username }}"
       >
@@ -68,15 +68,27 @@
     <div class="profile-main-info">
       <h1>{{ profile.username }}</h1>
 
+      {% if profile.status %}
+        <p class="profile-status">{{ profile.status }}</p>
+      {% else %}
+        <p class="profile-status muted">No status set.</p>
+      {% endif %}
+
       <div class="profile-stats">
         <span>{{ friend_count }} Friends</span>
         <span>{{ profile_blocks }} Blocks</span>
         <span>{{ created_games|length }} Created Games</span>
       </div>
 
-      <p class="profile-bio">
-        This user is building their Bloxy profile.
-      </p>
+      <div class="profile-bio-box">
+        <h3>Bio</h3>
+
+        {% if profile.bio %}
+          <p class="profile-bio">{{ profile.bio }}</p>
+        {% else %}
+          <p class="profile-bio muted">This user has not written a bio yet.</p>
+        {% endif %}
+      </div>
 
       <div class="profile-actions">
         {% if is_own_profile %}
@@ -124,6 +136,7 @@
               <h3>{{ game.title }}</h3>
               <p class="game-description">{{ game.description }}</p>
               <p>{{ game.players }} Playing</p>
+
               {% if game.creator %}
                 <p>By {{ game.creator }}</p>
               {% endif %}
@@ -179,7 +192,7 @@
               onclick="window.location.href='/profile/{{ friend.username }}'"
             >
               <img
-                src="/pfp/user/{{ friend.username }}"
+                src="/pfp/user/{{ friend.username }}?t={{ friend.username }}"
                 onerror="this.src='/logo.png'"
                 alt="{{ friend.username }}"
               >
@@ -199,6 +212,11 @@
 <script>
 function setProfileStatus(message, good) {
   const status = document.getElementById("profileActionStatus");
+
+  if (!status) {
+    return;
+  }
+
   status.textContent = message;
   status.style.color = good ? "#22c55e" : "#ff6666";
 }
@@ -206,7 +224,10 @@ function setProfileStatus(message, good) {
 function sendFriendRequest(username) {
   fetch("/api/friends/request", {
     method: "POST",
-    headers: {"Content-Type": "application/json"},
+    credentials: "same-origin",
+    headers: {
+      "Content-Type": "application/json"
+    },
     body: JSON.stringify({ username })
   })
   .then(r => r.json())
@@ -230,7 +251,10 @@ function sendFriendRequest(username) {
 function removeFriend(username) {
   fetch("/api/friends/remove", {
     method: "POST",
-    headers: {"Content-Type": "application/json"},
+    credentials: "same-origin",
+    headers: {
+      "Content-Type": "application/json"
+    },
     body: JSON.stringify({ username })
   })
   .then(r => r.json())
