@@ -1,5 +1,14 @@
 # Bloxy
 ## Built With
+# What is Bloxy?
+### Bloxy is an open-source game platform built for creating, sharing, and playing community-made games.
+It combines a Godot-based game client, an Electron launcher, and a web backend for accounts, profiles, friends, chat, game discovery, uploads, moderation, and creator tools.
+
+Bloxy is designed to give developers a simple way to publish games while giving players one place to discover and play them. The project includes platform features such as game hosting, player accounts, leaderboards, inventory systems, in-game purchases, moderation tools, and an SDK for game creators.
+
+The goal of Bloxy is to become a flexible, open platform powered by Godot, where anyone can build and share interactive experiences.
+## Note: The android app is not officially supported by Bloxy, Only Windows Macos and Linux are. If you compile your own client from the electron source your client is not supported by Bloxy.
+
 
 Bloxy is powered by **[Godot Engine](https://godotengine.org)** an open source game engine.
 
